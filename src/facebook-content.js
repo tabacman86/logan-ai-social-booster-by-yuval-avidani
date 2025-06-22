@@ -27,6 +27,7 @@ async function init() {
     if (settings.enableFacebook) {
         startObserving();
         setupPostViewingDetection();
+        setupReplyToCommentListeners();
     }
 }
 
@@ -473,6 +474,25 @@ function fillCommentBox(commentBox, comment) {
     }
     
     commentBox.dispatchEvent(new Event('change', { bubbles: true }));
+    commentBox.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    
+    // Force Facebook to recognize content and show send button
+    setTimeout(() => {
+        commentBox.dispatchEvent(new Event('focus', { bubbles: true }));
+        commentBox.dispatchEvent(new Event('blur', { bubbles: true }));
+        commentBox.dispatchEvent(new Event('focus', { bubbles: true }));
+        
+        // Try to find and enable the submit button
+        const parentForm = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddComment');
+        if (parentForm) {
+            const submitButtons = parentForm.querySelectorAll('button[type="submit"], button[data-testid*="comment_submit"]');
+            submitButtons.forEach(btn => {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
+            });
+        }
+    }, 500);
 }
 
 function highlightCommentBox(commentBox) {
@@ -480,17 +500,19 @@ function highlightCommentBox(commentBox) {
     commentBox.style.border = '2px solid #4CAF50';
     
     const indicator = document.createElement('div');
-    indicator.textContent = '🤖 AI Generated Comment';
+    indicator.textContent = '🤖 AI Generated Comment - Ready to Send!';
     indicator.style.cssText = `
         position: absolute;
-        top: -25px;
+        top: -30px;
         left: 0;
         background: #4CAF50;
         color: white;
-        padding: 2px 8px;
-        border-radius: 3px;
-        font-size: 11px;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: bold;
         z-index: 1000;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     `;
     
     const container = commentBox.closest('[data-testid*="comment"], .UFIAddComment, [role="article"]') || commentBox.parentElement;
@@ -504,6 +526,126 @@ function highlightCommentBox(commentBox) {
             }
             commentBox.style.backgroundColor = '';
             commentBox.style.border = '';
-        }, 5000);
+        }, 8000);
     }
+}
+
+// Add event listeners for reply-to-comment functionality
+function setupReplyToCommentListeners() {
+    // Listen for clicks on existing comments to generate replies
+    document.addEventListener('click', async (event) => {
+        const target = event.target;
+        
+        // Check if clicked element is within a comment
+        const commentElement = target.closest('[data-testid*="comment"], .UFIComment, [role="article"] [data-sigil="comment"]');
+        if (!commentElement) return;
+        
+        // Check if it's a reply button click
+        const isReplyButton = target.matches('button[aria-label*="Reply"], button[aria-label*="תשובה"], [data-testid*="reply"]') ||
+                             target.closest('button[aria-label*="Reply"], button[aria-label*="תשובה"], [data-testid*="reply"]');
+        
+        if (isReplyButton && settings.autoComment) {
+            console.log('Reply button clicked on Facebook, generating AI reply...');
+            await generateReplyToComment(commentElement);
+        }
+    });
+}
+
+async function generateReplyToComment(commentElement) {
+    try {
+        // Extract the comment text we're replying to
+        const commentText = extractCommentContent(commentElement);
+        if (!commentText) return;
+        
+        // Find the main post content for context
+        const mainPost = commentElement.closest('[data-pagelet="FeedUnit"], [role="article"], [data-testid="fbfeed_story"]');
+        const postContent = mainPost ? extractPostContent(mainPost) : '';
+        
+        console.log('Generating reply to Facebook comment:', commentText.substring(0, 100));
+        
+        // Generate reply using background script
+        const response = await chrome.runtime.sendMessage({
+            action: 'generateReply',
+            commentText: commentText,
+            postContent: postContent,
+            commentStyle: settings.commentStyle || 'professional'
+        });
+
+        if (!response.success) {
+            console.error('Failed to generate reply:', response.error);
+            return;
+        }
+
+        console.log('Generated Facebook reply:', response.comment);
+        
+        // Wait a moment for Facebook to open the reply box
+        await delay(1000);
+        
+        // Find the reply comment box that appeared
+        const replyBox = await findReplyCommentBox(commentElement);
+        
+        if (replyBox) {
+            fillCommentBox(replyBox, response.comment);
+            highlightCommentBox(replyBox);
+        }
+
+    } catch (error) {
+        console.error('Error generating reply to Facebook comment:', error);
+    }
+}
+
+function extractCommentContent(commentElement) {
+    try {
+        // Try different selectors for comment text on Facebook
+        const textSelectors = [
+            '[data-testid*="comment"] span',
+            '.UFICommentBody',
+            '.UFICommentContent',
+            '[data-sigil="comment-body"]',
+            '.userContent'
+        ];
+        
+        for (const selector of textSelectors) {
+            const textElement = commentElement.querySelector(selector);
+            if (textElement && textElement.textContent.trim()) {
+                return textElement.textContent.trim();
+            }
+        }
+        
+        // Fallback: get all text content but filter out UI elements
+        const allText = commentElement.textContent || '';
+        return allText.replace(/\b(Like|Reply|Delete|Edit|Share|לייק|תשובה|מחק|ערוך|שתף)\b/gi, '').trim();
+        
+    } catch (error) {
+        console.error('Error extracting Facebook comment content:', error);
+        return '';
+    }
+}
+
+async function findReplyCommentBox(commentElement) {
+    // Look for reply comment box that appears after clicking reply on Facebook
+    const replyBoxSelectors = [
+        '[data-testid="ufi_comment_composer"] textarea',
+        '[data-testid="ufi_comment_composer"] [contenteditable="true"]',
+        '.UFIAddCommentInput textarea',
+        '.UFIAddCommentInput [contenteditable="true"]',
+        'div[role="textbox"][contenteditable="true"]'
+    ];
+    
+    // First check within the comment element itself
+    for (const selector of replyBoxSelectors) {
+        const replyBox = commentElement.querySelector(selector);
+        if (replyBox) return replyBox;
+    }
+    
+    // Then check in the parent container
+    const parentContainer = commentElement.closest('[data-testid*="comment"], .UFIComment, [role="article"]');
+    if (parentContainer) {
+        for (const selector of replyBoxSelectors) {
+            const replyBox = parentContainer.querySelector(selector);
+            if (replyBox) return replyBox;
+        }
+    }
+    
+    return null;
 } 

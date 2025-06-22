@@ -27,6 +27,7 @@ async function init() {
     if (settings.enableLinkedIn) {
         startObserving();
         setupPostViewingDetection();
+        setupReplyToCommentListeners();
     }
 }
 
@@ -434,7 +435,7 @@ async function findOrOpenCommentBox(postElement) {
         const commentButtons = postElement.querySelectorAll('button[aria-label*="Comment"], button[aria-label*="תגובה"]');
         for (const btn of commentButtons) {
             btn.click();
-            await delay(1000);
+            await delay(1500);
             
             // Try to find comment box again
             for (const selector of commentBoxSelectors) {
@@ -464,9 +465,28 @@ function fillCommentBox(commentBox, comment) {
         commentBox.innerHTML = comment;
     }
     
-    // Trigger input events
+    // Trigger input events to make UI react
     commentBox.dispatchEvent(new Event('input', { bubbles: true }));
     commentBox.dispatchEvent(new Event('change', { bubbles: true }));
+    commentBox.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    
+    // Force LinkedIn to recognize content and show send button
+    setTimeout(() => {
+        commentBox.dispatchEvent(new Event('focus', { bubbles: true }));
+        commentBox.dispatchEvent(new Event('blur', { bubbles: true }));
+        commentBox.dispatchEvent(new Event('focus', { bubbles: true }));
+        
+        // Try to find and enable the submit button
+        const parentForm = commentBox.closest('.comments-comment-box__form, .comments-comment-box');
+        if (parentForm) {
+            const submitButtons = parentForm.querySelectorAll('button[type="submit"], button[data-control-name="comment_submit"]');
+            submitButtons.forEach(btn => {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
+            });
+        }
+    }, 500);
 }
 
 function highlightCommentBox(commentBox) {
@@ -476,17 +496,19 @@ function highlightCommentBox(commentBox) {
     
     // Add a small indicator
     const indicator = document.createElement('div');
-    indicator.textContent = '🤖 AI Generated Comment';
+    indicator.textContent = '🤖 AI Generated Comment - Ready to Send!';
     indicator.style.cssText = `
         position: absolute;
-        top: -25px;
+        top: -30px;
         left: 0;
         background: #4CAF50;
         color: white;
-        padding: 2px 8px;
-        border-radius: 3px;
-        font-size: 11px;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: bold;
         z-index: 1000;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     `;
     
     const container = commentBox.closest('.comments-comment-box__form') || commentBox.parentElement;
@@ -494,13 +516,131 @@ function highlightCommentBox(commentBox) {
         container.style.position = 'relative';
         container.appendChild(indicator);
         
-        // Remove indicator after 5 seconds
+        // Remove indicator after 8 seconds
         setTimeout(() => {
             if (indicator.parentElement) {
                 indicator.remove();
             }
             commentBox.style.backgroundColor = '';
             commentBox.style.border = '';
-        }, 5000);
+        }, 8000);
     }
+}
+
+// Add event listeners for reply-to-comment functionality
+function setupReplyToCommentListeners() {
+    // Listen for clicks on existing comments to generate replies
+    document.addEventListener('click', async (event) => {
+        const target = event.target;
+        
+        // Check if clicked element is within a comment
+        const commentElement = target.closest('.comments-comment-item, .comment, [data-test-id="comment"]');
+        if (!commentElement) return;
+        
+        // Check if it's a reply button click
+        const isReplyButton = target.matches('button[aria-label*="Reply"], button[aria-label*="תשובה"], .reply-button') ||
+                             target.closest('button[aria-label*="Reply"], button[aria-label*="תשובה"], .reply-button');
+        
+        if (isReplyButton && settings.autoComment) {
+            console.log('Reply button clicked, generating AI reply...');
+            await generateReplyToComment(commentElement);
+        }
+    });
+}
+
+async function generateReplyToComment(commentElement) {
+    try {
+        // Extract the comment text we're replying to
+        const commentText = extractCommentContent(commentElement);
+        if (!commentText) return;
+        
+        // Find the main post content for context
+        const mainPost = commentElement.closest('[data-id^="urn:li:activity"], .feed-shared-update-v2');
+        const postContent = mainPost ? extractPostContent(mainPost) : '';
+        
+        console.log('Generating reply to comment:', commentText.substring(0, 100));
+        
+        // Generate reply using background script
+        const response = await chrome.runtime.sendMessage({
+            action: 'generateReply',
+            commentText: commentText,
+            postContent: postContent,
+            commentStyle: settings.commentStyle || 'professional'
+        });
+
+        if (!response.success) {
+            console.error('Failed to generate reply:', response.error);
+            return;
+        }
+
+        console.log('Generated reply:', response.comment);
+        
+        // Wait a moment for LinkedIn to open the reply box
+        await delay(1000);
+        
+        // Find the reply comment box that appeared
+        const replyBox = await findReplyCommentBox(commentElement);
+        
+        if (replyBox) {
+            fillCommentBox(replyBox, response.comment);
+            highlightCommentBox(replyBox);
+        }
+
+    } catch (error) {
+        console.error('Error generating reply to comment:', error);
+    }
+}
+
+function extractCommentContent(commentElement) {
+    try {
+        // Try different selectors for comment text
+        const textSelectors = [
+            '.comments-comment-item__main-content',
+            '.comment-text',
+            '.comment-content',
+            '.feed-shared-text'
+        ];
+        
+        for (const selector of textSelectors) {
+            const textElement = commentElement.querySelector(selector);
+            if (textElement && textElement.textContent.trim()) {
+                return textElement.textContent.trim();
+            }
+        }
+        
+        // Fallback: get all text content but filter out UI elements
+        const allText = commentElement.textContent || '';
+        return allText.replace(/\b(Like|Reply|Delete|Edit|לייק|תשובה|מחק|ערוך)\b/gi, '').trim();
+        
+    } catch (error) {
+        console.error('Error extracting comment content:', error);
+        return '';
+    }
+}
+
+async function findReplyCommentBox(commentElement) {
+    // Look for reply comment box that appears after clicking reply
+    const replyBoxSelectors = [
+        '.comments-comment-box__form textarea',
+        '.comments-comment-texteditor',
+        'div[role="textbox"]',
+        '.ql-editor'
+    ];
+    
+    // First check within the comment element itself
+    for (const selector of replyBoxSelectors) {
+        const replyBox = commentElement.querySelector(selector);
+        if (replyBox) return replyBox;
+    }
+    
+    // Then check in the parent container
+    const parentContainer = commentElement.closest('.comments-comment-item, .comment-thread');
+    if (parentContainer) {
+        for (const selector of replyBoxSelectors) {
+            const replyBox = parentContainer.querySelector(selector);
+            if (replyBox) return replyBox;
+        }
+    }
+    
+    return null;
 } 
