@@ -130,10 +130,55 @@ button:hover {
     display: block;
 }
 
-.api-test-result.error {
-    color: #e53e3e;
-    background-color: #fed7d7;
-    border-color: #feb2b2;
+.api-test-result {
+    margin-top: 8px;
+}
+
+.api-result {
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.api-result.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.api-result.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.api-result.info {
+    background: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+
+#saveApiKey {
+    margin-top: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+#saveApiKey:hover {
+    background: #0056b3;
+}
+
+#saveApiKey:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
 }
 
 /* Scrollbar styling */

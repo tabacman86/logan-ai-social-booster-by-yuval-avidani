@@ -8,22 +8,30 @@ document.addEventListener('DOMContentLoaded', function() {
         enableLinkedIn: document.getElementById('enableLinkedIn'),
         enableFacebook: document.getElementById('enableFacebook'),
         saveSettings: document.getElementById('saveSettings'),
-        status: document.getElementById('status')
+        status: document.getElementById('status'),
+        apiTestResult: document.getElementById('apiTestResult')
     };
 
     // טעינת הגדרות קיימות
     loadSettings();
 
+    // הצגת/הסתרת כפתור שמירת מפתח API
+    elements.cohereApiKey.addEventListener('input', function() {
+        const hasValue = this.value.trim().length > 0;
+        elements.saveApiKey.style.display = hasValue ? 'inline-block' : 'none';
+        elements.apiTestResult.innerHTML = ''; // נקה תוצאות קודמות
+    });
+
     // שמירת מפתח API
     elements.saveApiKey.addEventListener('click', async function() {
         const apiKey = elements.cohereApiKey.value.trim();
         if (!apiKey) {
-            showStatus('אנא הזן מפתח API', 'error');
+            showApiTestResult('אנא הזן מפתח API', 'error');
             return;
         }
 
         // Test API connection
-        showStatus('בודק חיבור ל-Cohere...', 'success');
+        showApiTestResult('🔄 בודק חיבור ל-Cohere...', 'info');
         elements.saveApiKey.disabled = true;
         
         try {
@@ -35,25 +43,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 body: JSON.stringify({
                     model: 'command-a-03-2025',
-                    prompt: 'Test connection',
-                    max_tokens: 5,
-                    temperature: 0.7
+                    prompt: 'Test connection - please respond with "OK"',
+                    max_tokens: 10,
+                    temperature: 0.1
                 })
             });
 
             if (testResponse.ok) {
+                const responseData = await testResponse.json();
                 chrome.storage.local.set({
                     cohereApiKey: apiKey
                 }, function() {
-                    showStatus('מפתח API נשמר בהצלחה! החיבור ל-Cohere פעיל.', 'success');
+                    showApiTestResult('✅ החיבור ל-Cohere פעיל! משתמש במודל: command-a-03-2025', 'success');
                     elements.cohereApiKey.value = '';
+                    elements.saveApiKey.style.display = 'none';
+                    showStatus('מפתח API נשמר בהצלחה!', 'success');
                 });
             } else {
                 const errorData = await testResponse.json();
-                showStatus(`שגיאה בחיבור ל-Cohere: ${errorData.message || 'מפתח לא תקין'}`, 'error');
+                showApiTestResult(`❌ שגיאה בחיבור: ${errorData.message || 'מפתח לא תקין'}`, 'error');
             }
         } catch (error) {
-            showStatus(`שגיאה בבדיקת החיבור: ${error.message}`, 'error');
+            showApiTestResult(`❌ שגיאה בבדיקת החיבור: ${error.message}`, 'error');
         }
         
         elements.saveApiKey.disabled = false;
@@ -102,6 +113,13 @@ document.addEventListener('DOMContentLoaded', function() {
             elements.enableLinkedIn.checked = result.enableLinkedIn !== false;
             elements.enableFacebook.checked = result.enableFacebook !== false;
         });
+
+        // בדיקה אם יש מפתח API שמור
+        chrome.storage.local.get(['cohereApiKey'], function(result) {
+            if (result.cohereApiKey) {
+                showApiTestResult('✅ מפתח API שמור ופעיל (command-a-03-2025)', 'success');
+            }
+        });
     }
 
     function showStatus(message, type) {
@@ -113,21 +131,48 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 3000);
     }
 
-    // Persona management event listeners
-    document.getElementById('managePersonas').addEventListener('click', openPersonaModal);
-    document.getElementById('addPersona').addEventListener('click', showPersonaEditor);
-    document.getElementById('savePersona').addEventListener('click', savePersona);
-    document.getElementById('cancelEdit').addEventListener('click', hidePersonaEditor);
-    document.getElementById('deletePersona').addEventListener('click', deletePersona);
-    document.getElementById('addExample').addEventListener('click', addExample);
-    
-    // Modal close handlers
-    document.querySelector('.close').addEventListener('click', closePersonaModal);
-    document.getElementById('personaModal').addEventListener('click', function(e) {
-        if (e.target === this) {
-            closePersonaModal();
-        }
-    });
+    function showApiTestResult(message, type) {
+        elements.apiTestResult.innerHTML = `<div class="api-result ${type}">${message}</div>`;
+    }
+
+    // Persona management event listeners - בדיקה שהאלמנטים קיימים לפני הוספת listeners
+    const managePersonasBtn = document.getElementById('managePersonas');
+    const addPersonaBtn = document.getElementById('addPersona');
+    const savePersonaBtn = document.getElementById('savePersona');
+    const cancelEditBtn = document.getElementById('cancelEdit');
+    const deletePersonaBtn = document.getElementById('deletePersona');
+    const addExampleBtn = document.getElementById('addExample');
+    const closeBtn = document.querySelector('.close');
+    const personaModal = document.getElementById('personaModal');
+
+    if (managePersonasBtn) {
+        managePersonasBtn.addEventListener('click', openPersonaModal);
+    }
+    if (addPersonaBtn) {
+        addPersonaBtn.addEventListener('click', showPersonaEditor);
+    }
+    if (savePersonaBtn) {
+        savePersonaBtn.addEventListener('click', savePersona);
+    }
+    if (cancelEditBtn) {
+        cancelEditBtn.addEventListener('click', hidePersonaEditor);
+    }
+    if (deletePersonaBtn) {
+        deletePersonaBtn.addEventListener('click', deletePersona);
+    }
+    if (addExampleBtn) {
+        addExampleBtn.addEventListener('click', addExample);
+    }
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closePersonaModal);
+    }
+    if (personaModal) {
+        personaModal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closePersonaModal();
+            }
+        });
+    }
     
     // Load personas on startup
     loadPersonas();
@@ -143,17 +188,19 @@ function loadPersonas() {
         
         // Update active persona dropdown
         const activePersonaSelect = document.getElementById('activePersona');
-        activePersonaSelect.innerHTML = '<option value="">ללא פרסונה</option>';
-        
-        Object.keys(personas).forEach(id => {
-            const option = document.createElement('option');
-            option.value = id;
-            option.textContent = personas[id].name;
-            if (id === activePersona) {
-                option.selected = true;
-            }
-            activePersonaSelect.appendChild(option);
-        });
+        if (activePersonaSelect) {
+            activePersonaSelect.innerHTML = '<option value="">ללא פרסונה</option>';
+            
+            Object.keys(personas).forEach(id => {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = personas[id].name;
+                if (id === activePersona) {
+                    option.selected = true;
+                }
+                activePersonaSelect.appendChild(option);
+            });
+        }
         
         // Update personas list in modal
         updatePersonasList(personas);
@@ -162,6 +209,8 @@ function loadPersonas() {
 
 function updatePersonasList(personas) {
     const personasList = document.getElementById('personasList');
+    if (!personasList) return;
+    
     personasList.innerHTML = '';
     
     if (Object.keys(personas).length === 0) {
@@ -194,13 +243,19 @@ function updatePersonasList(personas) {
 }
 
 function openPersonaModal() {
-    document.getElementById('personaModal').style.display = 'block';
-    loadPersonas(); // Refresh the list
+    const modal = document.getElementById('personaModal');
+    if (modal) {
+        modal.style.display = 'block';
+        loadPersonas(); // Refresh the list
+    }
 }
 
 function closePersonaModal() {
-    document.getElementById('personaModal').style.display = 'none';
-    hidePersonaEditor();
+    const modal = document.getElementById('personaModal');
+    if (modal) {
+        modal.style.display = 'none';
+        hidePersonaEditor();
+    }
 }
 
 function showPersonaEditor(personaData = null) {
@@ -381,55 +436,4 @@ function removeExample(index) {
     
     examples.splice(index, 1);
     updateExamplesList(examples);
-}
-
-function loadSettings() {
-    chrome.storage.sync.get([
-        'autoLike', 'autoComment', 'commentStyle', 'cohereApiKey', 
-        'linkedinEnabled', 'facebookEnabled', 'activePersona'
-    ], function(result) {
-        document.getElementById('autoLike').checked = result.autoLike || false;
-        document.getElementById('autoComment').checked = result.autoComment || false;
-        document.getElementById('commentStyle').value = result.commentStyle || 'professional';
-        document.getElementById('cohereApiKey').value = result.cohereApiKey || '';
-        document.getElementById('linkedinEnabled').checked = result.linkedinEnabled !== false;
-        document.getElementById('facebookEnabled').checked = result.facebookEnabled !== false;
-        
-        // Load active persona
-        if (result.activePersona) {
-            document.getElementById('activePersona').value = result.activePersona;
-        }
-    });
-}
-
-function saveSettings() {
-    const settings = {
-        autoLike: document.getElementById('autoLike').checked,
-        autoComment: document.getElementById('autoComment').checked,
-        commentStyle: document.getElementById('commentStyle').value,
-        cohereApiKey: document.getElementById('cohereApiKey').value,
-        linkedinEnabled: document.getElementById('linkedinEnabled').checked,
-        facebookEnabled: document.getElementById('facebookEnabled').checked,
-        activePersona: document.getElementById('activePersona').value
-    };
-
-    chrome.storage.sync.set(settings, function() {
-        console.log('הגדרות נשמרו');
-        
-        // Send message to background script to update settings
-        chrome.runtime.sendMessage({
-            action: 'settingsUpdated',
-            settings: settings
-        });
-        
-        // Show confirmation
-        const saveBtn = document.getElementById('saveSettings');
-        const originalText = saveBtn.textContent;
-        saveBtn.textContent = 'נשמר!';
-        setTimeout(() => {
-            saveBtn.textContent = originalText;
-        }, 2000);
-    });
-}
-
-// ... existing testApiConnection function ... 
+} 
