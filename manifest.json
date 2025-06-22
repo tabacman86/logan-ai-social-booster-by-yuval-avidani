@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Social Media Auto Engager",
-  "version": "1.0",
-  "description": "Automatically engage with LinkedIn and Facebook posts using AI-generated responses",
+  "name": "YUV.AI SocialBot Pro - Smart Auto Engager",
+  "version": "2.0",
+  "description": "AI-powered social media automation by YUV.AI - Automatically engage with LinkedIn and Facebook posts using personalized AI responses",
   "permissions": [
     "activeTab",
     "storage",
@@ -38,10 +38,10 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Social Media Auto Engager"
+    "default_title": "YUV.AI SocialBot Pro"
   },
   "icons": {
-    "16": "icons/icon16.svg",
+    "16": "icons/icon16.png",
     "48": "icons/icon48.svg",
     "128": "icons/icon128.svg"
   }
