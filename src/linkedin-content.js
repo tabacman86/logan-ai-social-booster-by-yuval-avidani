@@ -452,134 +452,163 @@ async function findOrOpenCommentBox(postElement) {
 async function followLinkedInInteractionSequence(commentBox, comment) {
     console.log('Following LinkedIn interaction sequence...');
     
-    // Step 1: Focus on the comment box (simulate user click)
-    console.log('Step 1: Focusing on comment box');
-    commentBox.focus();
-    commentBox.click();
-    
-    // Wait for LinkedIn to register the focus
-    await delay(300);
-    
-    // Step 2: Clear any existing content
-    console.log('Step 2: Clearing existing content');
-    commentBox.innerHTML = '';
-    commentBox.value = '';
-    commentBox.textContent = '';
-    
-    // Step 3: Simulate typing the comment character by character (key sequence)
-    console.log('Step 3: Simulating typing sequence');
-    
-    // First, simulate a single character to trigger LinkedIn's validation
-    const firstChar = comment.charAt(0);
-    
-    // Simulate keydown for first character
-    const keydownEvent = new KeyboardEvent('keydown', {
-        key: firstChar,
-        code: `Key${firstChar.toUpperCase()}`,
-        bubbles: true,
-        cancelable: true
-    });
-    commentBox.dispatchEvent(keydownEvent);
-    
-    // Add the first character
-    if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
-        commentBox.value = firstChar;
-    } else {
-        commentBox.textContent = firstChar;
-        commentBox.innerHTML = firstChar;
-    }
-    
-    // Trigger input event for first character
-    const inputEvent1 = new InputEvent('input', {
-        data: firstChar,
-        inputType: 'insertText',
-        bubbles: true
-    });
-    commentBox.dispatchEvent(inputEvent1);
-    
-    // Simulate keyup for first character
-    const keyupEvent = new KeyboardEvent('keyup', {
-        key: firstChar,
-        code: `Key${firstChar.toUpperCase()}`,
-        bubbles: true,
-        cancelable: true
-    });
-    commentBox.dispatchEvent(keyupEvent);
-    
-    // Wait for LinkedIn to process the first character
-    await delay(200);
-    
-    // Step 4: Add the rest of the comment
-    console.log('Step 4: Adding full comment');
-    if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
-        commentBox.value = comment;
-    } else {
-        commentBox.textContent = comment;
-        commentBox.innerHTML = comment.replace(/\n/g, '<br>');
-    }
-    
-    // Trigger comprehensive input events
-    const inputEvent2 = new InputEvent('input', {
-        data: comment,
-        inputType: 'insertText',
-        bubbles: true
-    });
-    commentBox.dispatchEvent(inputEvent2);
-    
-    // Additional events that LinkedIn might listen for
-    ['input', 'change', 'blur', 'focus'].forEach(eventType => {
-        const event = new Event(eventType, { bubbles: true });
-        commentBox.dispatchEvent(event);
-    });
-    
-    // Step 5: Wait for LinkedIn to validate and show submit button
-    console.log('Step 5: Waiting for LinkedIn validation');
-    await delay(500);
-    
-    // Step 6: Look for and activate submit button
-    console.log('Step 6: Looking for submit button');
-    const parentContainer = commentBox.closest('.comments-comment-box, .comments-comment-box__form, .artdeco-card') || 
-                           commentBox.parentElement.closest('.comments-comment-box, .comments-comment-box__form');
-    
-    if (parentContainer) {
-        const submitButtonSelectors = [
-            'button[data-control-name="comment_submit"]',
-            'button[type="submit"]',
-            'button[aria-label*="Post"]',
-            'button[aria-label*="פרסם"]',
-            '.comments-comment-box__submit-button button:not([disabled])',
-            '.comments-comment-box-comment__cta-container button:not([disabled])'
-        ];
+    try {
+        // Step 1: Focus on the comment box (simulate user click)
+        console.log('Step 1: Focusing on comment box');
+        commentBox.focus();
+        commentBox.click();
         
-        let submitButton = null;
+        // Wait for LinkedIn to register the focus
+        await delay(300);
         
-        // Try to find an enabled submit button
-        for (const selector of submitButtonSelectors) {
-            const buttons = parentContainer.querySelectorAll(selector);
-            for (const btn of buttons) {
-                if (!btn.disabled && (btn.textContent.includes('Post') || btn.textContent.includes('פרסם') || btn.getAttribute('aria-label')?.includes('Post'))) {
-                    submitButton = btn;
-                    break;
-                }
-            }
-            if (submitButton) break;
+        // Step 2: Clear any existing content
+        console.log('Step 2: Clearing existing content');
+        commentBox.innerHTML = '';
+        commentBox.value = '';
+        commentBox.textContent = '';
+        
+        // Step 3: Simulate typing the comment character by character (key sequence)
+        console.log('Step 3: Simulating typing sequence');
+        
+        // First, simulate a single character to trigger LinkedIn's validation
+        const firstChar = comment.charAt(0) || 'a';
+        
+        // Create safe keyboard events
+        try {
+            // Simulate keydown for first character
+            const keydownEvent = new KeyboardEvent('keydown', {
+                key: firstChar,
+                bubbles: true,
+                cancelable: true
+            });
+            commentBox.dispatchEvent(keydownEvent);
+        } catch (e) {
+            console.log('KeyboardEvent creation failed, using fallback');
         }
         
-        if (submitButton) {
-            console.log('Found active submit button:', submitButton);
-            // Make sure it's visible and enabled
-            submitButton.disabled = false;
-            submitButton.style.opacity = '1';
-            submitButton.style.pointerEvents = 'auto';
-            submitButton.style.display = 'block';
-            submitButton.style.visibility = 'visible';
+        // Add the first character
+        if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
+            commentBox.value = firstChar;
         } else {
-            console.log('No active submit button found, creating custom one...');
-            createLinkedInSubmitButton(parentContainer, commentBox);
+            commentBox.textContent = firstChar;
+            commentBox.innerHTML = firstChar;
         }
+        
+        // Trigger input event for first character
+        try {
+            const inputEvent1 = new InputEvent('input', {
+                data: firstChar,
+                inputType: 'insertText',
+                bubbles: true
+            });
+            commentBox.dispatchEvent(inputEvent1);
+        } catch (e) {
+            // Fallback to basic Event
+            const inputEvent = new Event('input', { bubbles: true });
+            commentBox.dispatchEvent(inputEvent);
+        }
+        
+        // Simulate keyup for first character
+        try {
+            const keyupEvent = new KeyboardEvent('keyup', {
+                key: firstChar,
+                bubbles: true,
+                cancelable: true
+            });
+            commentBox.dispatchEvent(keyupEvent);
+        } catch (e) {
+            console.log('KeyboardEvent keyup creation failed');
+        }
+        
+        // Wait for LinkedIn to process the first character
+        await delay(200);
+        
+        // Step 4: Add the rest of the comment
+        console.log('Step 4: Adding full comment');
+        if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
+            commentBox.value = comment;
+        } else {
+            commentBox.textContent = comment;
+            commentBox.innerHTML = comment.replace(/\n/g, '<br>');
+        }
+        
+        // Trigger comprehensive input events
+        try {
+            const inputEvent2 = new InputEvent('input', {
+                data: comment,
+                inputType: 'insertText',
+                bubbles: true
+            });
+            commentBox.dispatchEvent(inputEvent2);
+        } catch (e) {
+            // Fallback to basic Event
+            const inputEvent = new Event('input', { bubbles: true });
+            commentBox.dispatchEvent(inputEvent);
+        }
+        
+        // Additional events that LinkedIn might listen for
+        ['input', 'change', 'blur', 'focus'].forEach(eventType => {
+            try {
+                const event = new Event(eventType, { bubbles: true });
+                commentBox.dispatchEvent(event);
+            } catch (e) {
+                console.log(`Failed to dispatch ${eventType} event`);
+            }
+        });
+        
+        // Step 5: Wait for LinkedIn to validate and show submit button
+        console.log('Step 5: Waiting for LinkedIn validation');
+        await delay(500);
+        
+        // Step 6: Look for and activate submit button
+        console.log('Step 6: Looking for submit button');
+        const parentContainer = commentBox.closest('.comments-comment-box, .comments-comment-box__form, .artdeco-card') || 
+                               commentBox.parentElement.closest('.comments-comment-box, .comments-comment-box__form');
+        
+        if (parentContainer) {
+            const submitButtonSelectors = [
+                'button[data-control-name="comment_submit"]',
+                'button[type="submit"]',
+                'button[aria-label*="Post"]',
+                'button[aria-label*="פרסם"]',
+                '.comments-comment-box__submit-button button:not([disabled])',
+                '.comments-comment-box-comment__cta-container button:not([disabled])'
+            ];
+            
+            let submitButton = null;
+            
+            // Try to find an enabled submit button
+            for (const selector of submitButtonSelectors) {
+                const buttons = parentContainer.querySelectorAll(selector);
+                for (const btn of buttons) {
+                    if (!btn.disabled && (btn.textContent.includes('Post') || btn.textContent.includes('פרסם') || btn.getAttribute('aria-label')?.includes('Post'))) {
+                        submitButton = btn;
+                        break;
+                    }
+                }
+                if (submitButton) break;
+            }
+            
+            if (submitButton) {
+                console.log('Found active submit button:', submitButton);
+                // Make sure it's visible and enabled
+                submitButton.disabled = false;
+                submitButton.style.opacity = '1';
+                submitButton.style.pointerEvents = 'auto';
+                submitButton.style.display = 'block';
+                submitButton.style.visibility = 'visible';
+            } else {
+                console.log('No active submit button found, creating custom one...');
+                createLinkedInSubmitButton(parentContainer, commentBox);
+            }
+        }
+        
+        return true;
+        
+    } catch (error) {
+        console.error('Error in LinkedIn interaction sequence:', error);
+        throw error;
     }
-    
-    return true;
 }
 
 function fillCommentBox(commentBox, comment) {
@@ -1084,55 +1113,83 @@ function createLinkedInSubmitButton(container, commentBox) {
         
         console.log('Custom submit button clicked, attempting to post comment...');
         
-        // Try multiple approaches to submit the comment
-        
-        // 1. Look for LinkedIn's real submit button that might have appeared
-        const realSubmitBtn = container.querySelector('button[data-control-name="comment_submit"]');
-        if (realSubmitBtn) {
-            console.log('Found real LinkedIn submit button, clicking it...');
-            realSubmitBtn.click();
-            return;
-        }
-        
-        // 2. Try to trigger form submission
-        const form = commentBox.closest('form');
-        if (form) {
-            console.log('Triggering form submission...');
-            form.dispatchEvent(new Event('submit', { bubbles: true }));
-            return;
-        }
-        
-        // 3. Try to find and click any button that might submit
-        const allButtons = container.querySelectorAll('button');
-        for (const btn of allButtons) {
-            if (btn !== submitBtn && (
-                btn.textContent.includes('Post') || 
-                btn.textContent.includes('פרסם') ||
-                btn.getAttribute('aria-label')?.includes('Post') ||
-                btn.getAttribute('data-control-name')?.includes('submit')
-            )) {
-                console.log('Found potential submit button, clicking:', btn);
-                btn.click();
+        try {
+            // Try multiple approaches to submit the comment
+            
+            // 1. Look for LinkedIn's real submit button that might have appeared
+            const realSubmitBtn = container.querySelector('button[data-control-name="comment_submit"]');
+            if (realSubmitBtn) {
+                console.log('Found real LinkedIn submit button, clicking it...');
+                realSubmitBtn.click();
                 return;
             }
-        }
-        
-        // 4. Try keyboard shortcut (Ctrl+Enter)
-        console.log('Trying keyboard shortcut Ctrl+Enter...');
-        const ctrlEnterEvent = new KeyboardEvent('keydown', {
-            key: 'Enter',
-            code: 'Enter',
-            ctrlKey: true,
-            bubbles: true
-        });
-        commentBox.dispatchEvent(ctrlEnterEvent);
-        
-        // 5. Show manual instruction if nothing worked
-        setTimeout(() => {
-            if (commentBox.value || commentBox.textContent) {
-                alert('Comment is ready! Please click the LinkedIn "Post" button to publish, or press Ctrl+Enter');
+            
+            // 2. Try to trigger form submission
+            const form = commentBox.closest('form');
+            if (form) {
+                console.log('Triggering form submission...');
+                try {
+                    form.dispatchEvent(new Event('submit', { bubbles: true }));
+                    return;
+                } catch (error) {
+                    console.log('Form submission failed:', error);
+                }
             }
-        }, 1000);
+            
+            // 3. Try to find and click any button that might submit
+            const allButtons = container.querySelectorAll('button');
+            for (const btn of allButtons) {
+                if (btn !== submitBtn && (
+                    btn.textContent.includes('Post') || 
+                    btn.textContent.includes('פרסם') ||
+                    btn.getAttribute('aria-label')?.includes('Post') ||
+                    btn.getAttribute('data-control-name')?.includes('submit')
+                )) {
+                    console.log('Found potential submit button, clicking:', btn);
+                    try {
+                        btn.click();
+                        return;
+                    } catch (error) {
+                        console.log('Button click failed:', error);
+                    }
+                }
+            }
+            
+            // 4. Try keyboard shortcut (Ctrl+Enter)
+            console.log('Trying keyboard shortcut Ctrl+Enter...');
+            try {
+                const ctrlEnterEvent = new KeyboardEvent('keydown', {
+                    key: 'Enter',
+                    code: 'Enter',
+                    ctrlKey: true,
+                    bubbles: true
+                });
+                commentBox.dispatchEvent(ctrlEnterEvent);
+            } catch (error) {
+                console.log('Keyboard event failed:', error);
+                
+                // Fallback: basic Enter key
+                try {
+                    const enterEvent = new Event('keydown', { bubbles: true });
+                    Object.defineProperty(enterEvent, 'key', { value: 'Enter' });
+                    Object.defineProperty(enterEvent, 'ctrlKey', { value: true });
+                    commentBox.dispatchEvent(enterEvent);
+                } catch (fallbackError) {
+                    console.log('Fallback keyboard event also failed:', fallbackError);
+                }
+            }
+            
+            // 5. Show manual instruction if nothing worked
+            setTimeout(() => {
+                if (commentBox.value || commentBox.textContent) {
+                    alert('Comment is ready! Please click the LinkedIn "Post" button to publish, or press Ctrl+Enter');
+                }
+            }, 1000);
+            
+        } catch (error) {
+            console.error('Error in submit button click handler:', error);
+            alert('Comment is ready! Please click the LinkedIn "Post" button manually to publish.');
+        }
     });
     
     // Find the best place to add the button
