@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Social Media Auto Engager",
+  "version": "1.0",
+  "description": "Automatically engage with LinkedIn and Facebook posts using AI-generated responses",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "https://linkedin.com/*",
+    "https://www.facebook.com/*",
+    "https://facebook.com/*",
+    "https://api.cohere.ai/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/*",
+        "https://linkedin.com/*"
+      ],
+      "js": ["linkedin-content.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://www.facebook.com/*",
+        "https://facebook.com/*"
+      ],
+      "js": ["facebook-content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Social Media Auto Engager"
+  },
+  "icons": {
+    "16": "icons/icon16.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  }
+} 

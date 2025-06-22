@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Social Media Auto Engager</h1>
+        
+        <div class="section">
+            <h3>הגדרות Cohere</h3>
+            <input type="password" id="cohereApiKey" placeholder="הזן את מפתח ה-API של Cohere">
+            <button id="saveApiKey">שמור מפתח API</button>
+        </div>
+        
+        <div class="section">
+            <h3>הגדרות תגובות</h3>
+            <div class="toggle-container">
+                <label>
+                    <input type="checkbox" id="autoLike">
+                    <span class="toggle-text">לייק אוטומטי</span>
+                </label>
+            </div>
+            <div class="toggle-container">
+                <label>
+                    <input type="checkbox" id="autoComment">
+                    <span class="toggle-text">תגובות אוטומטיות</span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>סגנון תגובות</h3>
+            <select id="commentStyle">
+                <option value="professional">מקצועי</option>
+                <option value="friendly">ידידותי</option>
+                <option value="encouraging">מעודד</option>
+                <option value="thoughtful">מחשיב</option>
+            </select>
+        </div>
+        
+        <div class="section">
+            <h3>פלטפורמות</h3>
+            <div class="toggle-container">
+                <label>
+                    <input type="checkbox" id="enableLinkedIn" checked>
+                    <span class="toggle-text">LinkedIn</span>
+                </label>
+            </div>
+            <div class="toggle-container">
+                <label>
+                    <input type="checkbox" id="enableFacebook" checked>
+                    <span class="toggle-text">Facebook</span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="status" id="status"></div>
+        
+        <button id="saveSettings" class="primary-btn">שמור הגדרות</button>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html> 
