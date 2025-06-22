@@ -497,58 +497,105 @@ function fillCommentBox(commentBox, comment) {
     // Focus and trigger Facebook's validation
     commentBox.focus();
     
-    // Delayed attempts to show submit buttons
+    // Force Facebook to recognize that there's content by simulating typing
     setTimeout(() => {
-        console.log('Attempting to show Facebook submit buttons...');
+        console.log('Simulating typing to trigger Facebook submit button...');
         
-        const submitButtonSelectors = [
-            'button[type="submit"]',
-            '[data-testid="ufi_comment_composer"] button',
-            '.UFIAddCommentInput button',
-            'button[aria-label*="Post"]',
-            'button[aria-label*="פרסם"]',
-            'button[data-testid="UFI2CommentsCount/submitButton"]'
-        ];
+        // Simulate typing events that Facebook listens for
+        const keydownEvent = new KeyboardEvent('keydown', {
+            key: 'a',
+            code: 'KeyA',
+            keyCode: 65,
+            which: 65,
+            bubbles: true
+        });
+        
+        const keyupEvent = new KeyboardEvent('keyup', {
+            key: 'a',
+            code: 'KeyA',
+            keyCode: 65,
+            which: 65,
+            bubbles: true
+        });
+        
+        commentBox.dispatchEvent(keydownEvent);
+        commentBox.dispatchEvent(keyupEvent);
+        
+        // Force input event again
+        commentBox.dispatchEvent(new Event('input', { bubbles: true }));
+        
+        // Try to find the parent form and trigger validation
+        const form = commentBox.closest('form');
+        if (form) {
+            const formInputEvent = new Event('input', { bubbles: true });
+            form.dispatchEvent(formInputEvent);
+        }
+        
+    }, 200);
+    
+    // Wait longer and then look for submit buttons or create one
+    setTimeout(() => {
+        console.log('Looking for Facebook submit buttons...');
         
         const parentContainer = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddCommentInput') || 
                                commentBox.parentElement.closest('[data-testid="ufi_comment_composer"], .UFIAddCommentInput');
         
         if (parentContainer) {
-            console.log('Looking for Facebook submit buttons in:', parentContainer);
+            // Look for existing submit buttons first
+            const submitButtonSelectors = [
+                'button[type="submit"]',
+                '[data-testid="ufi_comment_composer"] button',
+                '.UFIAddCommentInput button',
+                'button[aria-label*="Post"]',
+                'button[aria-label*="פרסם"]',
+                'button[data-testid="UFI2CommentsCount/submitButton"]'
+            ];
+            
+            let foundSubmitButton = false;
             
             submitButtonSelectors.forEach(selector => {
                 const buttons = parentContainer.querySelectorAll(selector);
                 buttons.forEach(btn => {
-                    console.log('Found potential Facebook submit button:', btn);
-                    btn.disabled = false;
-                    btn.style.opacity = '1';
-                    btn.style.pointerEvents = 'auto';
-                    btn.style.display = 'block';
-                    btn.style.visibility = 'visible';
+                    if (btn.textContent.includes('Post') || btn.textContent.includes('פרסם') || btn.getAttribute('aria-label')?.includes('Post')) {
+                        console.log('Found Facebook submit button:', btn);
+                        btn.disabled = false;
+                        btn.style.opacity = '1';
+                        btn.style.pointerEvents = 'auto';
+                        btn.style.display = 'block';
+                        btn.style.visibility = 'visible';
+                        foundSubmitButton = true;
+                    }
                 });
             });
             
-            // Force create submit button if not found
-            const existingSubmitBtn = parentContainer.querySelector('button[type="submit"]');
-            if (!existingSubmitBtn) {
-                console.log('Creating Facebook submit button manually');
+            // If no submit button found, create our own
+            if (!foundSubmitButton) {
+                console.log('No Facebook submit button found, creating custom one...');
                 createFacebookSubmitButton(parentContainer, commentBox);
             }
         }
         
-    }, 300);
+    }, 800);
     
-    // Additional attempt after longer delay
+    // Final attempt with longer delay
     setTimeout(() => {
-        const submitButton = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddCommentInput')
-                           ?.querySelector('button[type="submit"]');
-        if (submitButton) {
-            submitButton.disabled = false;
-            submitButton.style.opacity = '1';
-            submitButton.style.display = 'block';
-            console.log('Facebook submit button enabled:', submitButton);
+        const parentContainer = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddCommentInput');
+        if (parentContainer) {
+            const submitButton = parentContainer.querySelector('button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.style.opacity = '1';
+                submitButton.style.display = 'block';
+                console.log('Final Facebook submit button check - enabled:', submitButton);
+            } else {
+                console.log('Still no Facebook submit button found, ensuring custom button exists...');
+                const existingCustomBtn = parentContainer.querySelector('.ai-custom-facebook-submit-btn');
+                if (!existingCustomBtn) {
+                    createFacebookSubmitButton(parentContainer, commentBox);
+                }
+            }
         }
-    }, 1000);
+    }, 1500);
 }
 
 function showEditableCommentInterface(commentBox, originalComment) {
@@ -660,39 +707,121 @@ function showEditableCommentInterface(commentBox, originalComment) {
 }
 
 function createFacebookSubmitButton(container, commentBox) {
+    // Remove any existing custom submit button
+    const existingBtn = container.querySelector('.ai-custom-facebook-submit-btn');
+    if (existingBtn) {
+        existingBtn.remove();
+    }
+    
+    // Create a submit button that looks like Facebook's
     const submitBtn = document.createElement('button');
+    submitBtn.className = 'ai-custom-facebook-submit-btn';
     submitBtn.textContent = 'Post';
-    submitBtn.type = 'submit';
+    submitBtn.type = 'button'; // Don't use submit to avoid form conflicts
+    
     submitBtn.style.cssText = `
         background: #1877f2;
         color: white;
         border: none;
-        padding: 8px 16px;
+        padding: 6px 12px;
         border-radius: 6px;
         margin-left: 8px;
         cursor: pointer;
-        font-weight: bold;
+        font-weight: 600;
         font-size: 14px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        transition: background-color 0.15s ease-in-out;
+        min-height: 28px;
     `;
+    
+    // Add hover effect
+    submitBtn.addEventListener('mouseenter', () => {
+        submitBtn.style.background = '#166fe5';
+    });
+    
+    submitBtn.addEventListener('mouseleave', () => {
+        submitBtn.style.background = '#1877f2';
+    });
     
     submitBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        const realSubmitBtn = container.querySelector('button[data-testid*="comment_submit"]');
+        e.stopPropagation();
+        
+        console.log('Custom Facebook submit button clicked, attempting to post comment...');
+        
+        // Try multiple approaches to submit the comment
+        
+        // 1. Look for Facebook's real submit button that might have appeared
+        const realSubmitBtn = container.querySelector('button[data-testid*="comment_submit"], button[type="submit"]');
         if (realSubmitBtn) {
+            console.log('Found real Facebook submit button, clicking it...');
             realSubmitBtn.click();
-        } else {
-            const form = commentBox.closest('form');
-            if (form) {
-                form.dispatchEvent(new Event('submit', { bubbles: true }));
+            return;
+        }
+        
+        // 2. Try to trigger form submission
+        const form = commentBox.closest('form');
+        if (form) {
+            console.log('Triggering Facebook form submission...');
+            form.dispatchEvent(new Event('submit', { bubbles: true }));
+            return;
+        }
+        
+        // 3. Try to find and click any button that might submit
+        const allButtons = container.querySelectorAll('button');
+        for (const btn of allButtons) {
+            if (btn !== submitBtn && (
+                btn.textContent.includes('Post') || 
+                btn.textContent.includes('פרסם') ||
+                btn.getAttribute('aria-label')?.includes('Post') ||
+                btn.getAttribute('data-testid')?.includes('submit')
+            )) {
+                console.log('Found potential Facebook submit button, clicking:', btn);
+                btn.click();
+                return;
             }
         }
+        
+        // 4. Try keyboard shortcut (Ctrl+Enter)
+        console.log('Trying Facebook keyboard shortcut Ctrl+Enter...');
+        const ctrlEnterEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            ctrlKey: true,
+            bubbles: true
+        });
+        commentBox.dispatchEvent(ctrlEnterEvent);
+        
+        // 5. Try Enter key alone (Facebook sometimes uses this)
+        setTimeout(() => {
+            const enterEvent = new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                bubbles: true
+            });
+            commentBox.dispatchEvent(enterEvent);
+        }, 500);
+        
+        // 6. Show manual instruction if nothing worked
+        setTimeout(() => {
+            if (commentBox.value || commentBox.textContent) {
+                alert('Comment is ready! Please click the Facebook "Post" button to publish, or press Ctrl+Enter');
+            }
+        }, 1000);
     });
     
+    // Find the best place to add the button
     const buttonContainer = container.querySelector('[data-testid*="comment_composer"]') || 
+                           container.querySelector('.UFIAddCommentInput') ||
                            commentBox.parentElement;
     
     if (buttonContainer) {
         buttonContainer.appendChild(submitBtn);
+        console.log('Custom Facebook submit button added to:', buttonContainer);
+    } else {
+        // Fallback: add after the comment box
+        commentBox.parentElement.appendChild(submitBtn);
+        console.log('Custom Facebook submit button added as fallback after comment box');
     }
 }
 

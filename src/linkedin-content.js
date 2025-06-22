@@ -485,67 +485,215 @@ function fillCommentBox(commentBox, comment) {
     // Focus and trigger LinkedIn's validation
     commentBox.focus();
     
-    // Delayed attempts to show submit buttons
+    // Force LinkedIn to recognize that there's content by simulating typing
     setTimeout(() => {
-        console.log('Attempting to show submit buttons...');
+        console.log('Simulating typing to trigger LinkedIn submit button...');
         
-        const submitButtonSelectors = [
-            'button[data-control-name="comment_submit"]',
-            'button[type="submit"]',
-            '.comments-comment-box__submit-button button',
-            '.comments-comment-box-comment__cta-container button',
-            'button[aria-label*="Post"]',
-            'button[aria-label*="פרסם"]'
-        ];
+        // Simulate typing events that LinkedIn listens for
+        const keydownEvent = new KeyboardEvent('keydown', {
+            key: 'a',
+            code: 'KeyA',
+            keyCode: 65,
+            which: 65,
+            bubbles: true
+        });
+        
+        const keyupEvent = new KeyboardEvent('keyup', {
+            key: 'a',
+            code: 'KeyA',
+            keyCode: 65,
+            which: 65,
+            bubbles: true
+        });
+        
+        commentBox.dispatchEvent(keydownEvent);
+        commentBox.dispatchEvent(keyupEvent);
+        
+        // Force input event again
+        commentBox.dispatchEvent(new Event('input', { bubbles: true }));
+        
+        // Try to find the parent form and trigger validation
+        const form = commentBox.closest('form');
+        if (form) {
+            const formInputEvent = new Event('input', { bubbles: true });
+            form.dispatchEvent(formInputEvent);
+        }
+        
+    }, 200);
+    
+    // Wait longer and then look for submit buttons or create one
+    setTimeout(() => {
+        console.log('Looking for LinkedIn submit buttons...');
         
         const parentContainer = commentBox.closest('.comments-comment-box, .comments-comment-box__form, .artdeco-card') || 
                                commentBox.parentElement.closest('.comments-comment-box, .comments-comment-box__form');
         
         if (parentContainer) {
-            console.log('Looking for submit buttons in:', parentContainer);
+            // Look for existing submit buttons first
+            const submitButtonSelectors = [
+                'button[data-control-name="comment_submit"]',
+                'button[type="submit"]',
+                'button[aria-label*="Post"]',
+                'button[aria-label*="פרסם"]',
+                '.comments-comment-box__submit-button button',
+                '.comments-comment-box-comment__cta-container button'
+            ];
+            
+            let foundSubmitButton = false;
             
             submitButtonSelectors.forEach(selector => {
                 const buttons = parentContainer.querySelectorAll(selector);
                 buttons.forEach(btn => {
-                    console.log('Found potential submit button:', btn);
-                    btn.disabled = false;
-                    btn.style.opacity = '1';
-                    btn.style.pointerEvents = 'auto';
-                    btn.style.display = 'block';
-                    btn.style.visibility = 'visible';
-                    
-                    // Try to trigger the button to appear
-                    btn.click();
-                    setTimeout(() => btn.focus(), 100);
+                    if (btn.textContent.includes('Post') || btn.textContent.includes('פרסם') || btn.getAttribute('aria-label')?.includes('Post')) {
+                        console.log('Found LinkedIn submit button:', btn);
+                        btn.disabled = false;
+                        btn.style.opacity = '1';
+                        btn.style.pointerEvents = 'auto';
+                        btn.style.display = 'block';
+                        btn.style.visibility = 'visible';
+                        foundSubmitButton = true;
+                    }
                 });
             });
             
-            // Force create submit button if not found
-            const existingSubmitBtn = parentContainer.querySelector('button[data-control-name="comment_submit"], button[type="submit"]');
-            if (!existingSubmitBtn) {
-                console.log('Creating submit button manually');
-                createSubmitButton(parentContainer, commentBox);
+            // If no submit button found, create our own
+            if (!foundSubmitButton) {
+                console.log('No submit button found, creating custom one...');
+                createLinkedInSubmitButton(parentContainer, commentBox);
             }
         }
         
-        // Try to trigger LinkedIn's internal validation
-        if (commentBox.tagName !== 'TEXTAREA') {
-            commentBox.setAttribute('data-artdeco-is-focused', 'true');
+    }, 800);
+    
+    // Final attempt with longer delay
+    setTimeout(() => {
+        const parentContainer = commentBox.closest('.comments-comment-box, .comments-comment-box__form');
+        if (parentContainer) {
+            const submitButton = parentContainer.querySelector('button[data-control-name="comment_submit"], button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.style.opacity = '1';
+                submitButton.style.display = 'block';
+                console.log('Final submit button check - enabled:', submitButton);
+            } else {
+                console.log('Still no submit button found, ensuring custom button exists...');
+                const existingCustomBtn = parentContainer.querySelector('.ai-custom-submit-btn');
+                if (!existingCustomBtn) {
+                    createLinkedInSubmitButton(parentContainer, commentBox);
+                }
+            }
+        }
+    }, 1500);
+}
+
+function createLinkedInSubmitButton(container, commentBox) {
+    // Remove any existing custom submit button
+    const existingBtn = container.querySelector('.ai-custom-submit-btn');
+    if (existingBtn) {
+        existingBtn.remove();
+    }
+    
+    // Create a submit button that looks like LinkedIn's
+    const submitBtn = document.createElement('button');
+    submitBtn.className = 'ai-custom-submit-btn';
+    submitBtn.textContent = 'Post';
+    submitBtn.type = 'button'; // Don't use submit to avoid form conflicts
+    
+    submitBtn.style.cssText = `
+        background: #0a66c2;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 16px;
+        margin-left: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 14px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        transition: background-color 0.15s ease-in-out;
+        min-height: 32px;
+    `;
+    
+    // Add hover effect
+    submitBtn.addEventListener('mouseenter', () => {
+        submitBtn.style.background = '#004182';
+    });
+    
+    submitBtn.addEventListener('mouseleave', () => {
+        submitBtn.style.background = '#0a66c2';
+    });
+    
+    submitBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log('Custom submit button clicked, attempting to post comment...');
+        
+        // Try multiple approaches to submit the comment
+        
+        // 1. Look for LinkedIn's real submit button that might have appeared
+        const realSubmitBtn = container.querySelector('button[data-control-name="comment_submit"]');
+        if (realSubmitBtn) {
+            console.log('Found real LinkedIn submit button, clicking it...');
+            realSubmitBtn.click();
+            return;
         }
         
-    }, 300);
-    
-    // Additional attempt after longer delay
-    setTimeout(() => {
-        const submitButton = commentBox.closest('.comments-comment-box, .comments-comment-box__form')
-                           ?.querySelector('button[data-control-name="comment_submit"], button[type="submit"]');
-        if (submitButton) {
-            submitButton.disabled = false;
-            submitButton.style.opacity = '1';
-            submitButton.style.display = 'block';
-            console.log('Submit button enabled:', submitButton);
+        // 2. Try to trigger form submission
+        const form = commentBox.closest('form');
+        if (form) {
+            console.log('Triggering form submission...');
+            form.dispatchEvent(new Event('submit', { bubbles: true }));
+            return;
         }
-    }, 1000);
+        
+        // 3. Try to find and click any button that might submit
+        const allButtons = container.querySelectorAll('button');
+        for (const btn of allButtons) {
+            if (btn !== submitBtn && (
+                btn.textContent.includes('Post') || 
+                btn.textContent.includes('פרסם') ||
+                btn.getAttribute('aria-label')?.includes('Post') ||
+                btn.getAttribute('data-control-name')?.includes('submit')
+            )) {
+                console.log('Found potential submit button, clicking:', btn);
+                btn.click();
+                return;
+            }
+        }
+        
+        // 4. Try keyboard shortcut (Ctrl+Enter)
+        console.log('Trying keyboard shortcut Ctrl+Enter...');
+        const ctrlEnterEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            ctrlKey: true,
+            bubbles: true
+        });
+        commentBox.dispatchEvent(ctrlEnterEvent);
+        
+        // 5. Show manual instruction if nothing worked
+        setTimeout(() => {
+            if (commentBox.value || commentBox.textContent) {
+                alert('Comment is ready! Please click the LinkedIn "Post" button to publish, or press Ctrl+Enter');
+            }
+        }, 1000);
+    });
+    
+    // Find the best place to add the button
+    const buttonContainer = container.querySelector('.comments-comment-box__submit-button') || 
+                           container.querySelector('.comments-comment-box-comment__cta-container') ||
+                           container.querySelector('.comments-comment-box__form-controls') ||
+                           commentBox.parentElement;
+    
+    if (buttonContainer) {
+        buttonContainer.appendChild(submitBtn);
+        console.log('Custom submit button added to:', buttonContainer);
+    } else {
+        // Fallback: add after the comment box
+        commentBox.parentElement.appendChild(submitBtn);
+        console.log('Custom submit button added as fallback after comment box');
+    }
 }
 
 function showEditableCommentInterface(commentBox, originalComment) {
@@ -654,47 +802,6 @@ function showEditableCommentInterface(commentBox, originalComment) {
     // Auto-focus the editable textarea
     editableTextarea.focus();
     editableTextarea.select();
-}
-
-function createSubmitButton(container, commentBox) {
-    // Create a submit button if LinkedIn doesn't show one
-    const submitBtn = document.createElement('button');
-    submitBtn.textContent = 'Post';
-    submitBtn.type = 'submit';
-    submitBtn.style.cssText = `
-        background: #0073b1;
-        color: white;
-        border: none;
-        padding: 8px 16px;
-        border-radius: 4px;
-        margin-left: 8px;
-        cursor: pointer;
-        font-weight: bold;
-    `;
-    
-    submitBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        // Try to find and trigger LinkedIn's real submit mechanism
-        const realSubmitBtn = container.querySelector('button[data-control-name="comment_submit"]');
-        if (realSubmitBtn) {
-            realSubmitBtn.click();
-        } else {
-            // Fallback: trigger form submission
-            const form = commentBox.closest('form');
-            if (form) {
-                form.dispatchEvent(new Event('submit', { bubbles: true }));
-            }
-        }
-    });
-    
-    // Add the button near the comment box
-    const buttonContainer = container.querySelector('.comments-comment-box__submit-button') || 
-                           container.querySelector('.comments-comment-box-comment__cta-container') ||
-                           commentBox.parentElement;
-    
-    if (buttonContainer) {
-        buttonContainer.appendChild(submitBtn);
-    }
 }
 
 function highlightCommentBox(commentBox) {
