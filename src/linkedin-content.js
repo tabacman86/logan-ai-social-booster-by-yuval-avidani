@@ -450,51 +450,52 @@ async function findOrOpenCommentBox(postElement) {
 }
 
 function fillCommentBox(commentBox, comment) {
-    console.log('Filling comment box with:', comment);
-    
-    // Focus the comment box first
-    commentBox.focus();
-    commentBox.click();
+    console.log('Filling comment box with:', comment.substring(0, 50));
     
     // Clear existing content
-    if (commentBox.tagName === 'TEXTAREA') {
-        commentBox.value = '';
+    commentBox.innerHTML = '';
+    commentBox.value = '';
+    commentBox.textContent = '';
+    
+    // Fill based on element type
+    if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
         commentBox.value = comment;
     } else {
-        commentBox.textContent = '';
-        commentBox.innerHTML = '';
+        commentBox.innerHTML = comment.replace(/\n/g, '<br>');
         commentBox.textContent = comment;
-        commentBox.innerHTML = comment;
     }
     
-    // Trigger multiple events to ensure LinkedIn recognizes the input
-    const events = [
-        new Event('input', { bubbles: true }),
-        new Event('change', { bubbles: true }),
-        new KeyboardEvent('keydown', { bubbles: true, key: 'a' }),
-        new KeyboardEvent('keyup', { bubbles: true, key: 'a' }),
-        new Event('paste', { bubbles: true }),
-        new InputEvent('input', { bubbles: true, inputType: 'insertText', data: comment })
-    ];
+    // Show editable comment interface
+    showEditableCommentInterface(commentBox, comment);
     
-    events.forEach(event => commentBox.dispatchEvent(event));
+    // Trigger events to make LinkedIn recognize the content
+    ['input', 'keydown', 'keyup', 'paste'].forEach(eventType => {
+        const event = new Event(eventType, { bubbles: true });
+        commentBox.dispatchEvent(event);
+    });
     
-    // Force LinkedIn to recognize content and show submit button
+    // Additional InputEvent for modern browsers
+    const inputEvent = new InputEvent('input', {
+        data: comment,
+        inputType: 'insertText',
+        bubbles: true
+    });
+    commentBox.dispatchEvent(inputEvent);
+    
+    // Focus and trigger LinkedIn's validation
+    commentBox.focus();
+    
+    // Delayed attempts to show submit buttons
     setTimeout(() => {
-        // Trigger more events
-        commentBox.dispatchEvent(new Event('focus', { bubbles: true }));
-        commentBox.dispatchEvent(new Event('blur', { bubbles: true }));
-        commentBox.dispatchEvent(new Event('focus', { bubbles: true }));
+        console.log('Attempting to show submit buttons...');
         
-        // Look for submit buttons with updated selectors
         const submitButtonSelectors = [
             'button[data-control-name="comment_submit"]',
             'button[type="submit"]',
-            '.comments-comment-box__submit-button',
+            '.comments-comment-box__submit-button button',
             '.comments-comment-box-comment__cta-container button',
-            'button[aria-label*="Post"], button[aria-label*="פרסם"]',
-            'button.comments-comment-box__submit-button--cr',
-            'button.comments-comment-box-comment__form-controls button[type="submit"]'
+            'button[aria-label*="Post"]',
+            'button[aria-label*="פרסם"]'
         ];
         
         const parentContainer = commentBox.closest('.comments-comment-box, .comments-comment-box__form, .artdeco-card') || 
@@ -545,6 +546,114 @@ function fillCommentBox(commentBox, comment) {
             console.log('Submit button enabled:', submitButton);
         }
     }, 1000);
+}
+
+function showEditableCommentInterface(commentBox, originalComment) {
+    // Remove any existing interface
+    const existingInterface = commentBox.parentElement.querySelector('.ai-comment-interface');
+    if (existingInterface) {
+        existingInterface.remove();
+    }
+    
+    // Create editable interface
+    const interfaceContainer = document.createElement('div');
+    interfaceContainer.className = 'ai-comment-interface';
+    interfaceContainer.style.cssText = `
+        position: absolute;
+        top: -120px;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 2px solid #4CAF50;
+        border-radius: 8px;
+        padding: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    `;
+    
+    interfaceContainer.innerHTML = `
+        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 14px; font-weight: bold; color: #4CAF50;">🤖 AI Generated Comment</span>
+            <button id="regenerateBtn" style="margin-left: auto; background: #2196F3; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">🔄 Generate New</button>
+        </div>
+        <textarea id="editableComment" style="width: 100%; height: 60px; border: 1px solid #ddd; border-radius: 4px; padding: 8px; font-size: 14px; resize: vertical;" placeholder="Edit your comment...">${originalComment}</textarea>
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button id="useCommentBtn" style="background: #4CAF50; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">✓ Use Comment</button>
+            <button id="cancelCommentBtn" style="background: #f44336; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">✗ Cancel</button>
+        </div>
+    `;
+    
+    // Position the interface
+    const container = commentBox.closest('.comments-comment-box__form') || commentBox.parentElement;
+    container.style.position = 'relative';
+    container.appendChild(interfaceContainer);
+    
+    // Add event listeners
+    const editableTextarea = interfaceContainer.querySelector('#editableComment');
+    const useBtn = interfaceContainer.querySelector('#useCommentBtn');
+    const cancelBtn = interfaceContainer.querySelector('#cancelCommentBtn');
+    const regenerateBtn = interfaceContainer.querySelector('#regenerateBtn');
+    
+    useBtn.addEventListener('click', () => {
+        const editedComment = editableTextarea.value.trim();
+        if (editedComment) {
+            // Update the comment box with edited content
+            if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
+                commentBox.value = editedComment;
+            } else {
+                commentBox.innerHTML = editedComment.replace(/\n/g, '<br>');
+                commentBox.textContent = editedComment;
+            }
+            
+            // Trigger events
+            ['input', 'keydown', 'keyup'].forEach(eventType => {
+                commentBox.dispatchEvent(new Event(eventType, { bubbles: true }));
+            });
+            
+            // Remove interface and highlight
+            interfaceContainer.remove();
+            highlightCommentBox(commentBox);
+        }
+    });
+    
+    cancelBtn.addEventListener('click', () => {
+        // Clear comment box
+        commentBox.value = '';
+        commentBox.innerHTML = '';
+        commentBox.textContent = '';
+        interfaceContainer.remove();
+    });
+    
+    regenerateBtn.addEventListener('click', async () => {
+        regenerateBtn.disabled = true;
+        regenerateBtn.textContent = '🔄 Generating...';
+        
+        try {
+            // Get context for regeneration
+            const postElement = commentBox.closest('[data-id^="urn:li:activity"], .feed-shared-update-v2');
+            const postContent = postElement ? extractPostContent(postElement) : '';
+            
+            const response = await chrome.runtime.sendMessage({
+                action: 'generateComment',
+                postContent: postContent,
+                commentStyle: settings.commentStyle || 'professional'
+            });
+            
+            if (response.success) {
+                editableTextarea.value = response.comment;
+            }
+        } catch (error) {
+            console.error('Error regenerating comment:', error);
+        }
+        
+        regenerateBtn.disabled = false;
+        regenerateBtn.textContent = '🔄 Generate New';
+    });
+    
+    // Auto-focus the editable textarea
+    editableTextarea.focus();
+    editableTextarea.select();
 }
 
 function createSubmitButton(container, commentBox) {
@@ -635,44 +744,52 @@ function setupReplyToCommentListeners() {
         const target = event.target;
         console.log('Click detected on:', target);
         
-        // Check if clicked element is within a comment
-        const commentElement = target.closest(
-            '.comments-comment-item, .comment, [data-test-id="comment"], ' +
-            '.comments-comment-item-content-body, .comments-comment-item__main-content, ' +
-            '.feed-shared-comment, .comments-comment-item__content'
-        );
-        
-        if (!commentElement) {
-            console.log('Not within a comment element');
-            return;
-        }
-        
-        console.log('Found comment element:', commentElement);
-        
-        // Check if it's a reply button click - with more specific selectors
+        // More comprehensive reply button detection
         const isReplyButton = target.matches(
-            'button[aria-label*="Reply"], button[aria-label*="תשובה"], .reply-button, ' +
-            'button.comments-comment-item__reply-button, ' +
-            'button[data-control-name="reply"], ' +
-            'button[data-control-name="comment_reply"]'
+            'button[aria-label*="Reply"], button[aria-label*="reply"], ' +
+            'button[aria-label*="תשובה"], button[aria-label*="הגב"], ' +
+            '.reply-button, button.comments-comment-item__reply-button, ' +
+            'button[data-control-name="reply"], button[data-control-name="comment_reply"], ' +
+            'span[aria-label*="Reply"], span[aria-label*="reply"], ' +
+            '.comments-comment-item__inline-show-replies-text, ' +
+            '.comments-comment-item__reply-text'
         ) || target.closest(
-            'button[aria-label*="Reply"], button[aria-label*="תשובה"], .reply-button, ' +
-            'button.comments-comment-item__reply-button, ' +
-            'button[data-control-name="reply"], ' +
-            'button[data-control-name="comment_reply"]'
+            'button[aria-label*="Reply"], button[aria-label*="reply"], ' +
+            'button[aria-label*="תשובה"], button[aria-label*="הגב"], ' +
+            '.reply-button, button.comments-comment-item__reply-button, ' +
+            'button[data-control-name="reply"], button[data-control-name="comment_reply"], ' +
+            'span[aria-label*="Reply"], span[aria-label*="reply"], ' +
+            '.comments-comment-item__inline-show-replies-text, ' +
+            '.comments-comment-item__reply-text'
         );
+
+        // Also check if the target text content indicates it's a reply action
+        const targetText = target.textContent?.toLowerCase() || '';
+        const isReplyText = targetText.includes('reply') || targetText.includes('תשובה') || targetText.includes('הגב');
         
-        if (isReplyButton && settings.autoComment) {
-            console.log('Reply button clicked, generating AI reply...');
-            event.preventDefault();
-            event.stopPropagation();
+        if ((isReplyButton || isReplyText) && settings.autoComment) {
+            console.log('Reply action detected, finding comment element...');
             
-            // Wait a moment for the reply box to appear
-            setTimeout(async () => {
-                await generateReplyToComment(commentElement);
-            }, 500);
-        } else {
-            console.log('Not a reply button click');
+            // Find the comment element we're replying to
+            const commentElement = target.closest(
+                '.comments-comment-item, .comment, [data-test-id="comment"], ' +
+                '.comments-comment-item-content-body, .comments-comment-item__main-content, ' +
+                '.feed-shared-comment, .comments-comment-item__content, ' +
+                '.comments-comment-item__content-body-wrapper'
+            );
+            
+            if (commentElement) {
+                console.log('Found comment element for reply:', commentElement);
+                event.preventDefault();
+                event.stopPropagation();
+                
+                // Wait for the reply box to appear
+                setTimeout(async () => {
+                    await generateReplyToComment(commentElement);
+                }, 800); // Increased delay
+            } else {
+                console.log('No comment element found for reply');
+            }
         }
     }, true); // Use capture phase to catch events early
 }
@@ -681,7 +798,10 @@ async function generateReplyToComment(commentElement) {
     try {
         // Extract the comment text we're replying to
         const commentText = extractCommentContent(commentElement);
-        if (!commentText) return;
+        if (!commentText) {
+            console.log('No comment text found to reply to');
+            return;
+        }
         
         // Find the main post content for context
         const mainPost = commentElement.closest('[data-id^="urn:li:activity"], .feed-shared-update-v2');
@@ -704,15 +824,28 @@ async function generateReplyToComment(commentElement) {
 
         console.log('Generated reply:', response.comment);
         
-        // Wait a moment for LinkedIn to open the reply box
-        await delay(1000);
+        // Wait longer for LinkedIn to open the reply box
+        await delay(1500);
         
         // Find the reply comment box that appeared
         const replyBox = await findReplyCommentBox(commentElement);
         
         if (replyBox) {
+            console.log('Found reply box, filling with AI comment');
             fillCommentBox(replyBox, response.comment);
-            highlightCommentBox(replyBox);
+        } else {
+            console.log('Could not find reply comment box');
+            // Try one more time with a different approach
+            setTimeout(async () => {
+                const retryReplyBox = await findReplyCommentBox(commentElement);
+                if (retryReplyBox) {
+                    console.log('Found reply box on retry');
+                    fillCommentBox(retryReplyBox, response.comment);
+                } else {
+                    console.log('Still could not find reply box - showing manual interface');
+                    showManualReplyInterface(commentElement, response.comment);
+                }
+            }, 1000);
         }
 
     } catch (error) {
@@ -818,4 +951,73 @@ async function findReplyCommentBox(commentElement) {
     
     console.log('No reply comment box found');
     return null;
+}
+
+function showManualReplyInterface(commentElement, replyText) {
+    // Create a floating interface for manual reply insertion
+    const manualInterface = document.createElement('div');
+    manualInterface.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        border: 2px solid #4CAF50;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+        z-index: 99999;
+        max-width: 400px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    `;
+    
+    manualInterface.innerHTML = `
+        <div style="text-align: center; margin-bottom: 16px;">
+            <h3 style="color: #4CAF50; margin: 0 0 8px 0;">🤖 AI Reply Generated</h3>
+            <p style="color: #666; margin: 0; font-size: 14px;">Click in the reply box, then click "Insert Reply"</p>
+        </div>
+        <textarea readonly style="width: 100%; height: 80px; border: 1px solid #ddd; border-radius: 4px; padding: 8px; font-size: 14px; background: #f9f9f9;">${replyText}</textarea>
+        <div style="display: flex; gap: 8px; margin-top: 12px; justify-content: center;">
+            <button id="insertReplyBtn" style="background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold;">📝 Insert Reply</button>
+            <button id="copyReplyBtn" style="background: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer;">📋 Copy</button>
+            <button id="closeManualBtn" style="background: #f44336; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer;">✗ Close</button>
+        </div>
+    `;
+    
+    document.body.appendChild(manualInterface);
+    
+    // Add event listeners
+    manualInterface.querySelector('#insertReplyBtn').addEventListener('click', () => {
+        // Try to find any active text input
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'INPUT' || activeElement.contentEditable === 'true')) {
+            if (activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'INPUT') {
+                activeElement.value = replyText;
+            } else {
+                activeElement.textContent = replyText;
+                activeElement.innerHTML = replyText.replace(/\n/g, '<br>');
+            }
+            
+            // Trigger events
+            ['input', 'keydown', 'keyup'].forEach(eventType => {
+                activeElement.dispatchEvent(new Event(eventType, { bubbles: true }));
+            });
+            
+            manualInterface.remove();
+        } else {
+            alert('Please click in the reply text box first, then try again.');
+        }
+    });
+    
+    manualInterface.querySelector('#copyReplyBtn').addEventListener('click', () => {
+        navigator.clipboard.writeText(replyText).then(() => {
+            const btn = manualInterface.querySelector('#copyReplyBtn');
+            btn.textContent = '✓ Copied!';
+            setTimeout(() => btn.textContent = '📋 Copy', 2000);
+        });
+    });
+    
+    manualInterface.querySelector('#closeManualBtn').addEventListener('click', () => {
+        manualInterface.remove();
+    });
 } 

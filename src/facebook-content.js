@@ -462,52 +462,56 @@ async function findOrOpenCommentBox(postElement) {
 }
 
 function fillCommentBox(commentBox, comment) {
-    console.log('Filling Facebook comment box with:', comment);
+    console.log('Filling Facebook comment box with:', comment.substring(0, 50));
     
-    commentBox.focus();
-    commentBox.click();
+    // Clear existing content
+    commentBox.innerHTML = '';
+    commentBox.value = '';
+    commentBox.textContent = '';
     
-    if (commentBox.tagName === 'TEXTAREA') {
-        commentBox.value = '';
+    // Fill based on element type
+    if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
         commentBox.value = comment;
-        commentBox.dispatchEvent(new Event('input', { bubbles: true }));
     } else {
-        commentBox.textContent = '';
-        commentBox.innerHTML = '';
+        commentBox.innerHTML = comment.replace(/\n/g, '<br>');
         commentBox.textContent = comment;
-        commentBox.innerHTML = comment;
-        commentBox.dispatchEvent(new Event('input', { bubbles: true }));
     }
     
-    // Trigger multiple events for Facebook
-    const events = [
-        new Event('input', { bubbles: true }),
-        new Event('change', { bubbles: true }),
-        new KeyboardEvent('keydown', { bubbles: true, key: 'a' }),
-        new KeyboardEvent('keyup', { bubbles: true, key: 'a' }),
-        new Event('paste', { bubbles: true }),
-        new InputEvent('input', { bubbles: true, inputType: 'insertText', data: comment })
-    ];
+    // Show editable comment interface
+    showEditableCommentInterface(commentBox, comment);
     
-    events.forEach(event => commentBox.dispatchEvent(event));
+    // Trigger events to make Facebook recognize the content
+    ['input', 'keydown', 'keyup', 'paste'].forEach(eventType => {
+        const event = new Event(eventType, { bubbles: true });
+        commentBox.dispatchEvent(event);
+    });
     
-    // Force Facebook to recognize content and show submit button
+    // Additional InputEvent for modern browsers
+    const inputEvent = new InputEvent('input', {
+        data: comment,
+        inputType: 'insertText',
+        bubbles: true
+    });
+    commentBox.dispatchEvent(inputEvent);
+    
+    // Focus and trigger Facebook's validation
+    commentBox.focus();
+    
+    // Delayed attempts to show submit buttons
     setTimeout(() => {
-        commentBox.dispatchEvent(new Event('focus', { bubbles: true }));
-        commentBox.dispatchEvent(new Event('blur', { bubbles: true }));
-        commentBox.dispatchEvent(new Event('focus', { bubbles: true }));
+        console.log('Attempting to show Facebook submit buttons...');
         
-        // Look for submit buttons with Facebook selectors
         const submitButtonSelectors = [
             'button[type="submit"]',
-            'button[data-testid*="comment_submit"]',
-            'button[data-testid="ufi-comment-submit"]',
-            'button[aria-label*="Post"], button[aria-label*="פרסם"]',
-            '.UFICommentSubmitButton'
+            '[data-testid="ufi_comment_composer"] button',
+            '.UFIAddCommentInput button',
+            'button[aria-label*="Post"]',
+            'button[aria-label*="פרסם"]',
+            'button[data-testid="UFI2CommentsCount/submitButton"]'
         ];
         
-        const parentContainer = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddComment, [role="article"]') || 
-                               commentBox.parentElement;
+        const parentContainer = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddCommentInput') || 
+                               commentBox.parentElement.closest('[data-testid="ufi_comment_composer"], .UFIAddCommentInput');
         
         if (parentContainer) {
             console.log('Looking for Facebook submit buttons in:', parentContainer);
@@ -524,8 +528,8 @@ function fillCommentBox(commentBox, comment) {
                 });
             });
             
-            // Create submit button if not found
-            const existingSubmitBtn = parentContainer.querySelector('button[type="submit"], button[data-testid*="comment_submit"]');
+            // Force create submit button if not found
+            const existingSubmitBtn = parentContainer.querySelector('button[type="submit"]');
             if (!existingSubmitBtn) {
                 console.log('Creating Facebook submit button manually');
                 createFacebookSubmitButton(parentContainer, commentBox);
@@ -536,8 +540,8 @@ function fillCommentBox(commentBox, comment) {
     
     // Additional attempt after longer delay
     setTimeout(() => {
-        const submitButton = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddComment')
-                           ?.querySelector('button[type="submit"], button[data-testid*="comment_submit"]');
+        const submitButton = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddCommentInput')
+                           ?.querySelector('button[type="submit"]');
         if (submitButton) {
             submitButton.disabled = false;
             submitButton.style.opacity = '1';
@@ -545,6 +549,114 @@ function fillCommentBox(commentBox, comment) {
             console.log('Facebook submit button enabled:', submitButton);
         }
     }, 1000);
+}
+
+function showEditableCommentInterface(commentBox, originalComment) {
+    // Remove any existing interface
+    const existingInterface = commentBox.parentElement.querySelector('.ai-comment-interface');
+    if (existingInterface) {
+        existingInterface.remove();
+    }
+    
+    // Create editable interface
+    const interfaceContainer = document.createElement('div');
+    interfaceContainer.className = 'ai-comment-interface';
+    interfaceContainer.style.cssText = `
+        position: absolute;
+        top: -120px;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 2px solid #4CAF50;
+        border-radius: 8px;
+        padding: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    `;
+    
+    interfaceContainer.innerHTML = `
+        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 14px; font-weight: bold; color: #4CAF50;">🤖 AI Generated Comment</span>
+            <button id="regenerateBtn" style="margin-left: auto; background: #2196F3; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">🔄 Generate New</button>
+        </div>
+        <textarea id="editableComment" style="width: 100%; height: 60px; border: 1px solid #ddd; border-radius: 4px; padding: 8px; font-size: 14px; resize: vertical;" placeholder="Edit your comment...">${originalComment}</textarea>
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button id="useCommentBtn" style="background: #4CAF50; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">✓ Use Comment</button>
+            <button id="cancelCommentBtn" style="background: #f44336; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">✗ Cancel</button>
+        </div>
+    `;
+    
+    // Position the interface
+    const container = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddCommentInput') || commentBox.parentElement;
+    container.style.position = 'relative';
+    container.appendChild(interfaceContainer);
+    
+    // Add event listeners
+    const editableTextarea = interfaceContainer.querySelector('#editableComment');
+    const useBtn = interfaceContainer.querySelector('#useCommentBtn');
+    const cancelBtn = interfaceContainer.querySelector('#cancelCommentBtn');
+    const regenerateBtn = interfaceContainer.querySelector('#regenerateBtn');
+    
+    useBtn.addEventListener('click', () => {
+        const editedComment = editableTextarea.value.trim();
+        if (editedComment) {
+            // Update the comment box with edited content
+            if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
+                commentBox.value = editedComment;
+            } else {
+                commentBox.innerHTML = editedComment.replace(/\n/g, '<br>');
+                commentBox.textContent = editedComment;
+            }
+            
+            // Trigger events
+            ['input', 'keydown', 'keyup'].forEach(eventType => {
+                commentBox.dispatchEvent(new Event(eventType, { bubbles: true }));
+            });
+            
+            // Remove interface and highlight
+            interfaceContainer.remove();
+            highlightCommentBox(commentBox);
+        }
+    });
+    
+    cancelBtn.addEventListener('click', () => {
+        // Clear comment box
+        commentBox.value = '';
+        commentBox.innerHTML = '';
+        commentBox.textContent = '';
+        interfaceContainer.remove();
+    });
+    
+    regenerateBtn.addEventListener('click', async () => {
+        regenerateBtn.disabled = true;
+        regenerateBtn.textContent = '🔄 Generating...';
+        
+        try {
+            // Get context for regeneration
+            const postElement = commentBox.closest('[data-pagelet="FeedUnit"], [role="article"], [data-testid="fbfeed_story"]');
+            const postContent = postElement ? extractPostContent(postElement) : '';
+            
+            const response = await chrome.runtime.sendMessage({
+                action: 'generateComment',
+                postContent: postContent,
+                commentStyle: settings.commentStyle || 'professional'
+            });
+            
+            if (response.success) {
+                editableTextarea.value = response.comment;
+            }
+        } catch (error) {
+            console.error('Error regenerating comment:', error);
+        }
+        
+        regenerateBtn.disabled = false;
+        regenerateBtn.textContent = '🔄 Generate New';
+    });
+    
+    // Auto-focus the editable textarea
+    editableTextarea.focus();
+    editableTextarea.select();
 }
 
 function createFacebookSubmitButton(container, commentBox) {
