@@ -462,37 +462,126 @@ async function findOrOpenCommentBox(postElement) {
 }
 
 function fillCommentBox(commentBox, comment) {
+    console.log('Filling Facebook comment box with:', comment);
+    
     commentBox.focus();
+    commentBox.click();
     
     if (commentBox.tagName === 'TEXTAREA') {
+        commentBox.value = '';
         commentBox.value = comment;
         commentBox.dispatchEvent(new Event('input', { bubbles: true }));
     } else {
+        commentBox.textContent = '';
+        commentBox.innerHTML = '';
         commentBox.textContent = comment;
         commentBox.innerHTML = comment;
         commentBox.dispatchEvent(new Event('input', { bubbles: true }));
     }
     
-    commentBox.dispatchEvent(new Event('change', { bubbles: true }));
-    commentBox.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    // Trigger multiple events for Facebook
+    const events = [
+        new Event('input', { bubbles: true }),
+        new Event('change', { bubbles: true }),
+        new KeyboardEvent('keydown', { bubbles: true, key: 'a' }),
+        new KeyboardEvent('keyup', { bubbles: true, key: 'a' }),
+        new Event('paste', { bubbles: true }),
+        new InputEvent('input', { bubbles: true, inputType: 'insertText', data: comment })
+    ];
     
-    // Force Facebook to recognize content and show send button
+    events.forEach(event => commentBox.dispatchEvent(event));
+    
+    // Force Facebook to recognize content and show submit button
     setTimeout(() => {
         commentBox.dispatchEvent(new Event('focus', { bubbles: true }));
         commentBox.dispatchEvent(new Event('blur', { bubbles: true }));
         commentBox.dispatchEvent(new Event('focus', { bubbles: true }));
         
-        // Try to find and enable the submit button
-        const parentForm = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddComment');
-        if (parentForm) {
-            const submitButtons = parentForm.querySelectorAll('button[type="submit"], button[data-testid*="comment_submit"]');
-            submitButtons.forEach(btn => {
-                btn.disabled = false;
-                btn.style.opacity = '1';
-                btn.style.pointerEvents = 'auto';
+        // Look for submit buttons with Facebook selectors
+        const submitButtonSelectors = [
+            'button[type="submit"]',
+            'button[data-testid*="comment_submit"]',
+            'button[data-testid="ufi-comment-submit"]',
+            'button[aria-label*="Post"], button[aria-label*="פרסם"]',
+            '.UFICommentSubmitButton'
+        ];
+        
+        const parentContainer = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddComment, [role="article"]') || 
+                               commentBox.parentElement;
+        
+        if (parentContainer) {
+            console.log('Looking for Facebook submit buttons in:', parentContainer);
+            
+            submitButtonSelectors.forEach(selector => {
+                const buttons = parentContainer.querySelectorAll(selector);
+                buttons.forEach(btn => {
+                    console.log('Found potential Facebook submit button:', btn);
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.style.pointerEvents = 'auto';
+                    btn.style.display = 'block';
+                    btn.style.visibility = 'visible';
+                });
             });
+            
+            // Create submit button if not found
+            const existingSubmitBtn = parentContainer.querySelector('button[type="submit"], button[data-testid*="comment_submit"]');
+            if (!existingSubmitBtn) {
+                console.log('Creating Facebook submit button manually');
+                createFacebookSubmitButton(parentContainer, commentBox);
+            }
         }
-    }, 500);
+        
+    }, 300);
+    
+    // Additional attempt after longer delay
+    setTimeout(() => {
+        const submitButton = commentBox.closest('[data-testid="ufi_comment_composer"], .UFIAddComment')
+                           ?.querySelector('button[type="submit"], button[data-testid*="comment_submit"]');
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.style.opacity = '1';
+            submitButton.style.display = 'block';
+            console.log('Facebook submit button enabled:', submitButton);
+        }
+    }, 1000);
+}
+
+function createFacebookSubmitButton(container, commentBox) {
+    const submitBtn = document.createElement('button');
+    submitBtn.textContent = 'Post';
+    submitBtn.type = 'submit';
+    submitBtn.style.cssText = `
+        background: #1877f2;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        margin-left: 8px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 14px;
+    `;
+    
+    submitBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const realSubmitBtn = container.querySelector('button[data-testid*="comment_submit"]');
+        if (realSubmitBtn) {
+            realSubmitBtn.click();
+        } else {
+            const form = commentBox.closest('form');
+            if (form) {
+                form.dispatchEvent(new Event('submit', { bubbles: true }));
+            }
+        }
+    });
+    
+    const buttonContainer = container.querySelector('[data-testid*="comment_composer"]') || 
+                           commentBox.parentElement;
+    
+    if (buttonContainer) {
+        buttonContainer.appendChild(submitBtn);
+    }
 }
 
 function highlightCommentBox(commentBox) {
