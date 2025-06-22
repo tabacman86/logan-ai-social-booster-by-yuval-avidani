@@ -181,6 +181,37 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load personas on startup
     loadPersonas();
+    
+    // Add event listener for active persona selection
+    const activePersonaSelect = document.getElementById('activePersona');
+    if (activePersonaSelect) {
+        activePersonaSelect.addEventListener('change', function() {
+            const selectedPersona = this.value;
+            const personaStatus = document.getElementById('activePersonaStatus');
+            
+            chrome.storage.sync.set({ activePersona: selectedPersona }, function() {
+                if (selectedPersona) {
+                    const selectedText = activePersonaSelect.options[activePersonaSelect.selectedIndex].text;
+                    showStatus(`פרסונה נבחרה: ${selectedText}`, 'success');
+                    
+                    // Update status indicator
+                    if (personaStatus) {
+                        personaStatus.textContent = `פעילה: ${selectedText}`;
+                        personaStatus.className = 'persona-status active';
+                    }
+                } else {
+                    showStatus('פרסונה בוטלה', 'info');
+                    
+                    // Update status indicator
+                    if (personaStatus) {
+                        personaStatus.textContent = 'לא נבחרה פרסונה';
+                        personaStatus.className = 'persona-status inactive';
+                    }
+                }
+                console.log('Active persona saved:', selectedPersona);
+            });
+        });
+    }
 });
 
 let currentEditingPersona = null;
@@ -193,6 +224,8 @@ function loadPersonas() {
         
         // Update active persona dropdown
         const activePersonaSelect = document.getElementById('activePersona');
+        const personaStatus = document.getElementById('activePersonaStatus');
+        
         if (activePersonaSelect) {
             activePersonaSelect.innerHTML = '<option value="">ללא פרסונה</option>';
             
@@ -205,6 +238,17 @@ function loadPersonas() {
                 }
                 activePersonaSelect.appendChild(option);
             });
+        }
+        
+        // Update persona status indicator
+        if (personaStatus) {
+            if (activePersona && personas[activePersona]) {
+                personaStatus.textContent = `פעילה: ${personas[activePersona].name}`;
+                personaStatus.className = 'persona-status active';
+            } else {
+                personaStatus.textContent = 'לא נבחרה פרסונה';
+                personaStatus.className = 'persona-status inactive';
+            }
         }
         
         // Update personas list in modal
