@@ -82,51 +82,8 @@ function startObserving() {
 }
 
 function checkForNewPosts() {
-    findAndProcessPosts(document);
-}
-
-function findAndProcessPosts(container) {
-    // LinkedIn post selectors (may need updates as LinkedIn changes their HTML)
-    const postSelectors = [
-        '[data-id^="urn:li:activity"]',
-        '.feed-shared-update-v2',
-        '.share-update-card',
-        '.feed-shared-update-v2__content'
-    ];
-
-    postSelectors.forEach(selector => {
-        const posts = container.querySelectorAll ? container.querySelectorAll(selector) : [];
-        posts.forEach(post => processPost(post));
-    });
-}
-
-async function processPost(postElement) {
-    try {
-        // Create a unique identifier for this post
-        const postId = getPostId(postElement);
-        if (!postId || processedPosts.has(postId)) {
-            return;
-        }
-
-        processedPosts.add(postId);
-        console.log('Processing LinkedIn post:', postId);
-
-        // Wait a random time to appear more natural
-        await delay(Math.random() * 3000 + 1000);
-
-        // Auto-like if enabled
-        if (settings.autoLike) {
-            await autoLike(postElement);
-        }
-
-        // Auto-comment if enabled
-        if (settings.autoComment) {
-            await autoComment(postElement);
-        }
-
-    } catch (error) {
-        console.error('Error processing post:', error);
-    }
+    // Just observe new posts, don't process them automatically
+    observeCurrentPosts();
 }
 
 function getPostId(postElement) {
@@ -134,10 +91,22 @@ function getPostId(postElement) {
     const dataId = postElement.getAttribute('data-id');
     if (dataId) return dataId;
     
-    // Fallback: use post content hash
+    // Fallback: use post content hash (safe for Hebrew characters)
     const textContent = postElement.textContent?.trim();
     if (textContent) {
-        return btoa(textContent.substring(0, 100)).substring(0, 20);
+        try {
+            // Use encodeURIComponent instead of btoa to handle Hebrew characters
+            return encodeURIComponent(textContent.substring(0, 100)).substring(0, 20);
+        } catch (error) {
+            // If that fails, create a simple hash
+            let hash = 0;
+            for (let i = 0; i < Math.min(textContent.length, 100); i++) {
+                const char = textContent.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32bit integer
+            }
+            return Math.abs(hash).toString();
+        }
     }
     
     return null;
@@ -182,6 +151,8 @@ async function autoComment(postElement) {
         const postContent = extractPostContent(postElement);
         if (!postContent) return;
 
+        console.log('Generating comment for post:', postContent.substring(0, 100));
+
         // Generate comment using background script
         const response = await chrome.runtime.sendMessage({
             action: 'generateComment',
@@ -194,70 +165,14 @@ async function autoComment(postElement) {
             return;
         }
 
-        // Find comment box
-        const commentBoxSelectors = [
-            '.comments-comment-box__form textarea',
-            '.comments-comment-texteditor',
-            'div[role="textbox"]',
-            '.ql-editor'
-        ];
+        console.log('Generated comment:', response.comment);
 
-        let commentBox = null;
-        for (const selector of commentBoxSelectors) {
-            commentBox = postElement.querySelector(selector);
-            if (commentBox) break;
-        }
-
-        // If no comment box found, try to click "Comment" button first
-        if (!commentBox) {
-            const commentButtons = postElement.querySelectorAll('button[aria-label*="Comment"], button[aria-label*="תגובה"]');
-            for (const btn of commentButtons) {
-                btn.click();
-                await delay(1000);
-                
-                // Try to find comment box again
-                for (const selector of commentBoxSelectors) {
-                    commentBox = postElement.querySelector(selector);
-                    if (commentBox) break;
-                }
-                if (commentBox) break;
-            }
-        }
-
+        // Find or open comment box
+        let commentBox = await findOrOpenCommentBox(postElement);
+        
         if (commentBox) {
-            // Focus and add comment
-            commentBox.focus();
-            await delay(500);
-            
-            // Type comment
-            commentBox.textContent = response.comment;
-            commentBox.innerHTML = response.comment;
-            
-            // Trigger input events
-            commentBox.dispatchEvent(new Event('input', { bubbles: true }));
-            commentBox.dispatchEvent(new Event('change', { bubbles: true }));
-            
-            await delay(1000);
-
-            // Find and click submit button
-            const submitSelectors = [
-                'button[data-control-name="comment.post"]',
-                'button[type="submit"]',
-                '.comments-comment-box__submit-button',
-                'button:contains("Post")',
-                'button:contains("פרסם")'
-            ];
-
-            let submitButton = null;
-            for (const selector of submitSelectors) {
-                submitButton = postElement.querySelector(selector);
-                if (submitButton && !submitButton.disabled) break;
-            }
-
-            if (submitButton) {
-                submitButton.click();
-                console.log('Posted comment on LinkedIn:', response.comment);
-            }
+            // Fill the comment box with human-like typing
+            await followLinkedInInteractionSequence(commentBox, response.comment);
         }
 
     } catch (error) {
@@ -296,20 +211,24 @@ function delay(ms) {
 
 // Setup intersection observer to detect when user is viewing a post
 function setupPostViewingDetection() {
-    if (intersectionObserver) {
-        intersectionObserver.disconnect();
-    }
-
+    // Create intersection observer to detect when user is viewing posts
     intersectionObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
-            if (entry.isIntersecting && entry.intersectionRatio > 0.7) {
-                // User is viewing this post
+            if (entry.isIntersecting) {
+                // User started viewing this post
                 handlePostInView(entry.target);
+            } else {
+                // User stopped viewing this post
+                if (currentlyViewingPost === entry.target) {
+                    clearTimeout(viewingTimer);
+                    currentlyViewingPost = null;
+                    viewingTimer = null;
+                }
             }
         });
     }, {
-        threshold: [0.7], // Trigger when 70% of post is visible
-        rootMargin: '-50px 0px -50px 0px' // Margin to ensure post is well in view
+        threshold: 0.7, // Post needs to be 70% visible
+        rootMargin: '0px'
     });
 
     // Observe existing posts
@@ -318,9 +237,7 @@ function setupPostViewingDetection() {
 
 function observeCurrentPosts() {
     const posts = document.querySelectorAll('[data-id^="urn:li:activity"], .feed-shared-update-v2');
-    posts.forEach(post => {
-        intersectionObserver.observe(post);
-    });
+    posts.forEach(post => intersectionObserver.observe(post));
 }
 
 function handlePostInView(postElement) {
@@ -328,48 +245,37 @@ function handlePostInView(postElement) {
     if (viewingTimer) {
         clearTimeout(viewingTimer);
     }
-
-    // Set a timer - if user stays on post for 3 seconds, consider it "focused"
+    
+    currentlyViewingPost = postElement;
+    console.log('User is focusing on a post');
+    
+    // Wait 3 seconds before taking action
     viewingTimer = setTimeout(() => {
-        if (currentlyViewingPost !== postElement) {
-            currentlyViewingPost = postElement;
-            console.log('User is focusing on a post');
-            
-            // Process this post with higher priority
+        if (currentlyViewingPost === postElement) {
             processPostWithFocus(postElement);
         }
-    }, 3000); // 3 seconds viewing time
+    }, 3000); // 3 seconds delay
 }
 
 async function processPostWithFocus(postElement) {
     try {
         const postId = getPostId(postElement);
-        if (!postId) return;
+        if (!postId || processedPosts.has(postId)) {
+            return;
+        }
 
+        processedPosts.add(postId);
         console.log('Processing focused post:', postId);
 
-        // Check if enough time has passed since last action (human-like delay)
-        const currentTime = Date.now();
-        const timeSinceLastAction = currentTime - lastActionTime;
-        const minDelay = 15000; // Minimum 15 seconds between actions
-        
-        if (timeSinceLastAction < minDelay) {
-            const waitTime = minDelay - timeSinceLastAction;
-            console.log(`Waiting ${waitTime}ms before next action`);
-            await delay(waitTime);
-        }
-
-        // Auto-like if enabled
-        if (settings.autoLike && !processedPosts.has(postId + '_liked')) {
+        // Auto-like if enabled (only when user focused on post)
+        if (settings.autoLike) {
             await autoLike(postElement);
-            processedPosts.add(postId + '_liked');
-            lastActionTime = Date.now();
+            await delay(1000 + Math.random() * 2000); // Wait between actions
         }
 
-        // Pre-fill comment if enabled
-        if (settings.autoComment && !processedPosts.has(postId + '_commented')) {
-            await precommentPost(postElement);
-            processedPosts.add(postId + '_commented');
+        // Auto-comment if enabled (only when user focused on post)
+        if (settings.autoComment) {
+            await autoComment(postElement);
         }
 
     } catch (error) {
@@ -459,7 +365,7 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
         commentBox.click();
         
         // Wait for LinkedIn to register the focus
-        await delay(300);
+        await delay(500);
         
         // Step 2: Clear any existing content
         console.log('Step 2: Clearing existing content');
@@ -467,29 +373,29 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
         commentBox.value = '';
         commentBox.textContent = '';
         
-        // Step 3: Simulate typing the comment character by character (key sequence)
-        console.log('Step 3: Simulating gradual typing sequence');
+        // Step 3: Simulate very slow, human-like typing
+        console.log('Step 3: Simulating human-like typing sequence');
         
-        // Simulate gradual typing like a real user
-        const words = comment.split(' ');
+        // Type character by character with realistic delays
         let currentText = '';
+        const characters = comment.split('');
         
-        for (let i = 0; i < Math.min(words.length, 3); i++) { // Type first 3 words gradually
-            if (i > 0) currentText += ' ';
-            currentText += words[i];
+        for (let i = 0; i < characters.length; i++) {
+            const char = characters[i];
+            currentText += char;
             
             // Update the comment box
             if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
                 commentBox.value = currentText;
             } else {
                 commentBox.textContent = currentText;
-                commentBox.innerHTML = currentText;
+                commentBox.innerHTML = currentText.replace(/\n/g, '<br>');
             }
             
-            // Trigger input event
+            // Trigger input event after each character
             try {
                 const inputEvent = new InputEvent('input', {
-                    data: words[i],
+                    data: char,
                     inputType: 'insertText',
                     bubbles: true
                 });
@@ -499,39 +405,75 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
                 commentBox.dispatchEvent(inputEvent);
             }
             
-            // Wait between words like a real user
-            await delay(300 + Math.random() * 200); // 300-500ms between words
+            // Human-like typing speed: 80-200ms per character
+            // Slower for spaces and punctuation
+            let charDelay = 80 + Math.random() * 120; // 80-200ms base
+            if (char === ' ') charDelay += 50; // Longer pause at spaces
+            if (['.', ',', '!', '?'].includes(char)) charDelay += 100; // Longer pause at punctuation
             
-            console.log(`Typed: "${currentText}"`);
+            await delay(charDelay);
+            
+            // Show progress every 10 characters
+            if (i % 10 === 0 && i > 0) {
+                console.log(`Typed ${i}/${characters.length} characters: "${currentText.substring(Math.max(0, i-10), i+1)}"`);
+            }
+            
+            // Check every 20 characters if submit button appeared
+            if (i % 20 === 0 && i > 20) {
+                const parentContainer = commentBox.closest('.comments-comment-box, .comments-comment-box__form, .artdeco-card') || 
+                                       commentBox.parentElement.closest('.comments-comment-box, .comments-comment-box__form');
+                
+                if (parentContainer) {
+                    const quickCheck = parentContainer.querySelector('button[type="submit"], button span.artdeco-button__text');
+                    if (quickCheck) {
+                        const buttonText = quickCheck.textContent?.trim().toLowerCase();
+                        const spanText = quickCheck.querySelector('span.artdeco-button__text')?.textContent?.trim().toLowerCase();
+                        
+                        if (buttonText === 'post' || buttonText === 'comment' || spanText === 'post' || spanText === 'comment') {
+                            console.log('Submit button appeared during typing! Finishing text and submitting...');
+                            
+                            // Finish typing the rest quickly
+                            const remainingText = comment;
+                            if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
+                                commentBox.value = remainingText;
+                            } else {
+                                commentBox.textContent = remainingText;
+                                commentBox.innerHTML = remainingText.replace(/\n/g, '<br>');
+                            }
+                            
+                            // Final input event
+                            try {
+                                const finalInputEvent = new InputEvent('input', {
+                                    data: remainingText,
+                                    inputType: 'insertText',
+                                    bubbles: true
+                                });
+                                commentBox.dispatchEvent(finalInputEvent);
+                            } catch (e) {
+                                const inputEvent = new Event('input', { bubbles: true });
+                                commentBox.dispatchEvent(inputEvent);
+                            }
+                            
+                            // Wait a moment then click submit
+                            await delay(500);
+                            try {
+                                quickCheck.click();
+                                console.log('Successfully clicked submit button that appeared during typing');
+                                return true;
+                            } catch (clickError) {
+                                console.error('Error clicking submit button during typing:', clickError);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
         }
         
-        // Wait a bit more, then add the rest of the comment
-        await delay(500);
-        
-        // Step 4: Add the complete comment
-        console.log('Step 4: Adding complete comment');
-        if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
-            commentBox.value = comment;
-        } else {
-            commentBox.textContent = comment;
-            commentBox.innerHTML = comment.replace(/\n/g, '<br>');
-        }
-        
-        // Trigger final input events
-        try {
-            const inputEvent2 = new InputEvent('input', {
-                data: comment,
-                inputType: 'insertText',
-                bubbles: true
-            });
-            commentBox.dispatchEvent(inputEvent2);
-        } catch (e) {
-            const inputEvent = new Event('input', { bubbles: true });
-            commentBox.dispatchEvent(inputEvent);
-        }
+        console.log('Finished typing complete comment');
         
         // Additional events that LinkedIn might listen for
-        ['input', 'change', 'keyup'].forEach(eventType => {
+        ['change', 'keyup', 'blur', 'focus'].forEach(eventType => {
             try {
                 const event = new Event(eventType, { bubbles: true });
                 commentBox.dispatchEvent(event);
@@ -540,18 +482,18 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
             }
         });
         
-        // Step 5: Wait for LinkedIn to validate and show submit button
-        console.log('Step 5: Waiting for LinkedIn validation and submit button...');
-        await delay(1000); // Wait longer for validation
+        // Step 4: Wait for LinkedIn to validate and show submit button
+        console.log('Step 4: Waiting for LinkedIn validation and submit button...');
+        await delay(2000); // Wait longer for validation after full text
         
-        // Step 6: Look for and activate submit button
-        console.log('Step 6: Looking for submit button');
+        // Step 5: Look for and activate submit button
+        console.log('Step 5: Looking for submit button');
         const parentContainer = commentBox.closest('.comments-comment-box, .comments-comment-box__form, .artdeco-card') || 
                                commentBox.parentElement.closest('.comments-comment-box, .comments-comment-box__form');
         
         if (parentContainer) {
             // Use the new waitForSubmitButton function
-            const submitButton = await waitForSubmitButton(parentContainer, 5000); // Wait up to 5 seconds
+            const submitButton = await waitForSubmitButton(parentContainer, 8000); // Wait up to 8 seconds
             
             if (submitButton) {
                 console.log('Found submit button, attempting to click...');
@@ -563,57 +505,9 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
                     console.error('Error clicking submit button:', clickError);
                 }
             } else {
-                console.log('No submit button found in parent container, trying broader search...');
-                
-                // Try broader search - look in the entire document for recently appeared buttons
-                const allButtons = document.querySelectorAll('button');
-                console.log(`Searching in ${allButtons.length} buttons in entire document`);
-                
-                for (const btn of allButtons) {
-                    // Look for buttons with "Post", "Comment", "Send" text
-                    const buttonText = btn.textContent?.trim().toLowerCase();
-                    const ariaLabel = btn.getAttribute('aria-label')?.toLowerCase() || '';
-                    const span = btn.querySelector('span.artdeco-button__text');
-                    const spanText = span?.textContent?.trim().toLowerCase() || '';
-                    
-                    // Check if this is a submit/post button
-                    if (
-                        buttonText === 'post' || 
-                        buttonText === 'comment' ||
-                        buttonText === 'פרסם' ||
-                        buttonText === 'תגובה' ||
-                        spanText === 'post' ||
-                        spanText === 'comment' ||
-                        spanText === 'פרסם' ||
-                        spanText === 'תגובה' ||
-                        ariaLabel.includes('post') ||
-                        ariaLabel.includes('submit') ||
-                        ariaLabel.includes('פרסם') ||
-                        btn.type === 'submit' ||
-                        btn.getAttribute('data-control-name') === 'comment_submit'
-                    ) {
-                        // Check if this button is related to our comment box
-                        const btnContainer = btn.closest('.comments-comment-box, .comments-comment-box__form, form');
-                        const commentContainer = commentBox.closest('.comments-comment-box, .comments-comment-box__form, form');
-                        
-                        if (btnContainer === commentContainer || 
-                            btnContainer?.contains(commentBox) || 
-                            commentContainer?.contains(btn)) {
-                            
-                            console.log('Found submit button in broader search:', btn.textContent?.trim());
-                            try {
-                                btn.click();
-                                console.log('Successfully clicked submit button from broader search');
-                                return true;
-                            } catch (clickError) {
-                                console.error('Error clicking submit button from broader search:', clickError);
-                            }
-                        }
-                    }
-                }
-                
-                console.log('No submit button found after broader search, creating custom one...');
-                createLinkedInSubmitButton(parentContainer, commentBox);
+                console.log('No submit button found, showing manual interface...');
+                // Show manual interface for user to submit
+                showManualSubmitInterface(commentBox, comment);
             }
         } else {
             console.log('No parent container found for comment box');
@@ -1327,4 +1221,81 @@ function createLinkedInSubmitButton(container, commentBox) {
         commentBox.parentElement.appendChild(submitBtn);
         console.log('Custom submit button added as fallback after comment box');
     }
+}
+
+// Show manual submit interface when submit button is not found
+function showManualSubmitInterface(commentBox, comment) {
+    // Remove any existing manual interface
+    const existingInterface = document.querySelector('.manual-submit-interface');
+    if (existingInterface) {
+        existingInterface.remove();
+    }
+    
+    // Create manual submit interface
+    const manualInterface = document.createElement('div');
+    manualInterface.className = 'manual-submit-interface';
+    manualInterface.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #fff;
+        border: 3px solid #0073b1;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        z-index: 10000;
+        max-width: 400px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        text-align: center;
+    `;
+    
+    manualInterface.innerHTML = `
+        <div style="margin-bottom: 15px;">
+            <h3 style="color: #0073b1; margin: 0 0 10px 0;">🤖 YUV.AI Comment Ready!</h3>
+            <p style="margin: 0; color: #666; font-size: 14px;">
+                Your AI comment has been typed in the comment box.<br>
+                Please click the <strong>Post</strong> or <strong>Comment</strong> button to submit it.
+            </p>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+            <button id="highlightCommentBtn" style="
+                background: #0073b1; 
+                color: white; 
+                border: none; 
+                padding: 8px 16px; 
+                border-radius: 4px; 
+                cursor: pointer;
+                font-size: 14px;
+            ">✨ Highlight Comment Box</button>
+            <button id="dismissManualBtn" style="
+                background: #666; 
+                color: white; 
+                border: none; 
+                padding: 8px 16px; 
+                border-radius: 4px; 
+                cursor: pointer;
+                font-size: 14px;
+            ">✕ Dismiss</button>
+        </div>
+    `;
+    
+    document.body.appendChild(manualInterface);
+    
+    // Add event listeners
+    document.getElementById('highlightCommentBtn').addEventListener('click', () => {
+        highlightCommentBox(commentBox);
+        manualInterface.remove();
+    });
+    
+    document.getElementById('dismissManualBtn').addEventListener('click', () => {
+        manualInterface.remove();
+    });
+    
+    // Auto-dismiss after 10 seconds
+    setTimeout(() => {
+        if (document.body.contains(manualInterface)) {
+            manualInterface.remove();
+        }
+    }, 10000);
 } 
