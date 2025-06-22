@@ -9,9 +9,23 @@
         <h1>Social Media Auto Engager</h1>
         
         <div class="section">
-            <h3>הגדרות Cohere</h3>
-            <input type="password" id="cohereApiKey" placeholder="הזן את מפתח ה-API של Cohere">
-            <button id="saveApiKey">שמור מפתח API</button>
+            <h3>🤖 הגדרות Cohere API</h3>
+            <div class="setting-item">
+                <label for="cohereApiKey">API Key:</label>
+                <input type="password" id="cohereApiKey" placeholder="הכנס את ה-API Key שלך">
+                <div id="apiTestResult" class="api-test-result"></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>👤 ניהול פרסונות</h3>
+            <div class="setting-item">
+                <label for="activePersona">פרסונה פעילה:</label>
+                <select id="activePersona">
+                    <option value="">ללא פרסונה</option>
+                </select>
+                <button id="managePersonas" class="btn-secondary">נהל פרסונות</button>
+            </div>
         </div>
         
         <div class="section">
@@ -61,6 +75,46 @@
         <button id="saveSettings" class="primary-btn">שמור הגדרות</button>
     </div>
     
+    <!-- Persona Management Modal -->
+    <div id="personaModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>ניהול פרסונות</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="persona-list">
+                    <h4>פרסונות קיימות:</h4>
+                    <div id="personasList"></div>
+                    <button id="addPersona" class="btn-primary">הוסף פרסונה חדשה</button>
+                </div>
+                
+                <div id="personaEditor" class="persona-editor" style="display: none;">
+                    <h4 id="editorTitle">פרסונה חדשה</h4>
+                    <div class="form-group">
+                        <label for="personaName">שם הפרסונה:</label>
+                        <input type="text" id="personaName" placeholder="למשל: יובל המקצועי">
+                    </div>
+                    <div class="form-group">
+                        <label for="personaDescription">תיאור הפרסונה:</label>
+                        <textarea id="personaDescription" placeholder="תאר את הסגנון והטון של הפרסונה"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="personaExamples">דוגמאות פוסטים בסגנון שלך:</label>
+                        <div id="examplesList"></div>
+                        <textarea id="newExample" placeholder="הוסף דוגמה של פוסט או תגובה בסגנון שלך"></textarea>
+                        <button id="addExample" class="btn-secondary">הוסף דוגמה</button>
+                    </div>
+                    <div class="form-actions">
+                        <button id="savePersona" class="btn-primary">שמור פרסונה</button>
+                        <button id="cancelEdit" class="btn-secondary">ביטול</button>
+                        <button id="deletePersona" class="btn-danger" style="display: none;">מחק פרסונה</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="popup.js"></script>
 </body>
 </html> 

@@ -189,8 +189,8 @@ async function autoComment(postElement) {
         // Generate comment using background script
         const response = await chrome.runtime.sendMessage({
             action: 'generateComment',
-            postContent: postContent,
-            commentStyle: settings.commentStyle
+            postText: postContent,
+            commentStyle: settings.commentStyle || 'professional'
         });
 
         if (!response.success) {
