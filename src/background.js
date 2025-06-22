@@ -47,97 +47,81 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Function to generate comment using Cohere API
-async function generateComment(postText, commentStyle) {
-    const result = await chrome.storage.sync.get(['cohereApiKey', 'activePersona', 'personas']);
-    const apiKey = result.cohereApiKey;
-    const activePersona = result.activePersona;
-    const personas = result.personas || {};
-    
-    if (!apiKey) {
-        throw new Error('לא נמצא מפתח API');
-    }
+async function generateComment(post, style, personaData) {
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.get(['cohereApiKey'], async function(result) {
+            if (!result.cohereApiKey) {
+                reject(new Error('מפתח API לא קיים'));
+                return;
+            }
 
-    // Detect language
-    const isHebrew = /[\u0590-\u05FF]/.test(postText);
-    const language = isHebrew ? 'עברית' : 'English';
-    
-    // Build persona context
-    let personaContext = '';
-    if (activePersona && personas[activePersona]) {
-        const persona = personas[activePersona];
-        personaContext = `
-דפוס כתיבה: ${persona.description}
+            try {
+                // בדיקת שפה של הפוסט
+                const isHebrew = /[\u0590-\u05FF]/.test(post);
+                const language = isHebrew ? 'עברית' : 'אנגלית';
 
-דוגמאות מהסגנון שלך:
-${persona.examples.map(example => `- ${example}`).join('\n')}
+                // בנייה של ההודעה עם פרסונה
+                let systemMessage = `אתה מגיב על פוסטים ברשתות חברתיות בסגנון ${style}. תגיב ב${language} בהתאם לשפת הפוסט. התגובה צריכה להיות קצרה, אותנטית ורלוונטית לתוכן.`;
+                
+                if (personaData && personaData.name) {
+                    systemMessage += `\n\nאתה כותב בסגנון של "${personaData.name}". ${personaData.description || ''}`;
+                    
+                    if (personaData.examples && personaData.examples.length > 0) {
+                        systemMessage += `\n\nדוגמאות לסגנון הכתיבה שלך:\n`;
+                        personaData.examples.forEach((example, index) => {
+                            systemMessage += `${index + 1}. ${example}\n`;
+                        });
+                        systemMessage += `\nכתוב תגובה דומה בסגנון זה.`;
+                    }
+                }
 
-כתב תגובה באותו סגנון ורוח כמו הדוגמאות שלמעלה.`;
-    }
+                const userMessage = `פוסט: "${post}"\n\nכתוב תגובה קצרה ומעניינת (עד 50 מילים):`;
 
-    // Style descriptions
-    const styleDescriptions = {
-        professional: isHebrew ? 'מקצועי ועניינית' : 'professional and to the point',
-        friendly: isHebrew ? 'ידידותי וחם' : 'friendly and warm',
-        encouraging: isHebrew ? 'מעודד ותומך' : 'encouraging and supportive',
-        thoughtful: isHebrew ? 'מחשבתי ומעמיק' : 'thoughtful and insightful'
-    };
+                const response = await fetch('https://api.cohere.com/v2/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${result.cohereApiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'command-a-03-2025',
+                        messages: [
+                            {
+                                role: 'system',
+                                content: systemMessage
+                            },
+                            {
+                                role: 'user',
+                                content: userMessage
+                            }
+                        ],
+                        max_tokens: 150,
+                        temperature: 0.7,
+                        frequency_penalty: 0.1,
+                        presence_penalty: 0.1
+                    })
+                });
 
-    const styleDescription = styleDescriptions[commentStyle] || 
-                            (isHebrew ? 'מקצועי' : 'professional');
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Cohere API שגיאה: ${errorData.message || response.statusText}`);
+                }
 
-    const prompt = `אתה ${activePersona && personas[activePersona] ? personas[activePersona].name : 'יובל אבידני'}, כותב תגובה ל${postText ? 'פוסט' : 'תוכן'} ברשת חברתית.
-
-${personaContext}
-
-הפוסט:
-"${postText}"
-
-כתב תגובה קצרה ב${language} בסגנון ${styleDescription}${personaContext ? ' ובהתאם לדוגמאות שלך' : ''}. 
-התגובה צריכה להיות:
-- טבעית ואישית
-- עד 200 תווים
-- מעוררת עניין
-- ללא סמלים מוזרים או פורמט מיוחד
-- מתחילה מיד בתוכן (לא "תגובה:" או דומה)
-
-תגובה:`;
-
-    const response = await fetch('https://api.cohere.ai/v1/generate', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            model: 'command-a-03-2025',
-            prompt: prompt,
-            max_tokens: 100,
-            temperature: 0.8,
-            stop_sequences: ['\n\n', 'תגובה נוספת:', 'תגובה אחרת:', 'Another comment:', 'Comment:'],
-            return_likelihoods: 'NONE'
-        })
+                const data = await response.json();
+                
+                // גישה נכונה לטקסט בתגובה החדשה של Chat API
+                if (data.message && data.message.content && data.message.content[0] && data.message.content[0].text) {
+                    const comment = data.message.content[0].text.trim();
+                    resolve(comment);
+                } else {
+                    throw new Error('תגובה ריקה מ-Cohere API');
+                }
+            } catch (error) {
+                console.error('שגיאה ביצירת תגובה:', error);
+                reject(error);
+            }
+        });
     });
-
-    if (!response.ok) {
-        throw new Error(`Cohere API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    let comment = data.generations[0].text.trim();
-    
-    // Clean up the comment
-    comment = comment.replace(/^(תגובה|Comment|Response|תשובה):\s*/i, '').trim();
-    comment = comment.replace(/^["']|["']$/g, '').trim();
-    comment = comment.split('\n')[0].trim();
-    
-    if (comment.length > 200) {
-        comment = comment.substring(0, 200).trim();
-        if (comment.lastIndexOf(' ') > 150) {
-            comment = comment.substring(0, comment.lastIndexOf(' ')) + '...';
-        }
-    }
-    
-    return comment;
 }
 
 // Background task to check for new posts periodically

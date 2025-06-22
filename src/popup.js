@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', function() {
         elements.saveApiKey.disabled = true;
         
         try {
-            const testResponse = await fetch('https://api.cohere.ai/v1/generate', {
+            const testResponse = await fetch('https://api.cohere.com/v2/chat', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
@@ -43,7 +43,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 body: JSON.stringify({
                     model: 'command-a-03-2025',
-                    prompt: 'Test connection - please respond with "OK"',
+                    messages: [
+                        {
+                            role: 'user',
+                            content: 'Hello, please respond with "API test successful"'
+                        }
+                    ],
                     max_tokens: 10,
                     temperature: 0.1
                 })
