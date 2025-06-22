@@ -7,6 +7,10 @@ let settings = {
 };
 
 let processedPosts = new Set();
+let lastActionTime = 0;
+let currentlyViewingPost = null;
+let viewingTimer = null;
+let intersectionObserver = null;
 
 // Initialize the script
 init();
@@ -22,6 +26,7 @@ async function init() {
     
     if (settings.enableFacebook) {
         startObserving();
+        setupPostViewingDetection();
     }
 }
 
@@ -312,4 +317,193 @@ function extractPostContent(postElement) {
 
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Setup intersection observer to detect when user is viewing a post
+function setupPostViewingDetection() {
+    if (intersectionObserver) {
+        intersectionObserver.disconnect();
+    }
+
+    intersectionObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && entry.intersectionRatio > 0.7) {
+                handlePostInView(entry.target);
+            }
+        });
+    }, {
+        threshold: [0.7],
+        rootMargin: '-50px 0px -50px 0px'
+    });
+
+    observeCurrentPosts();
+}
+
+function observeCurrentPosts() {
+    const posts = document.querySelectorAll('[data-pagelet="FeedUnit"], [role="article"], [data-testid="fbfeed_story"]');
+    posts.forEach(post => {
+        intersectionObserver.observe(post);
+    });
+}
+
+function handlePostInView(postElement) {
+    if (viewingTimer) {
+        clearTimeout(viewingTimer);
+    }
+
+    viewingTimer = setTimeout(() => {
+        if (currentlyViewingPost !== postElement) {
+            currentlyViewingPost = postElement;
+            console.log('User is focusing on a Facebook post');
+            processPostWithFocus(postElement);
+        }
+    }, 3000);
+}
+
+async function processPostWithFocus(postElement) {
+    try {
+        const postId = getPostId(postElement);
+        if (!postId) return;
+
+        console.log('Processing focused Facebook post:', postId);
+
+        const currentTime = Date.now();
+        const timeSinceLastAction = currentTime - lastActionTime;
+        const minDelay = 15000;
+        
+        if (timeSinceLastAction < minDelay) {
+            const waitTime = minDelay - timeSinceLastAction;
+            console.log(`Waiting ${waitTime}ms before next action`);
+            await delay(waitTime);
+        }
+
+        if (settings.autoLike && !processedPosts.has(postId + '_liked')) {
+            await autoLike(postElement);
+            processedPosts.add(postId + '_liked');
+            lastActionTime = Date.now();
+        }
+
+        if (settings.autoComment && !processedPosts.has(postId + '_commented')) {
+            await precommentPost(postElement);
+            processedPosts.add(postId + '_commented');
+        }
+
+    } catch (error) {
+        console.error('Error processing focused Facebook post:', error);
+    }
+}
+
+async function precommentPost(postElement) {
+    try {
+        const postContent = extractPostContent(postElement);
+        if (!postContent) return;
+
+        console.log('Generating comment for Facebook post:', postContent.substring(0, 100));
+
+        const response = await chrome.runtime.sendMessage({
+            action: 'generateComment',
+            postContent: postContent,
+            commentStyle: settings.commentStyle
+        });
+
+        if (!response.success) {
+            console.error('Failed to generate comment:', response.error);
+            return;
+        }
+
+        console.log('Generated Facebook comment:', response.comment);
+
+        let commentBox = await findOrOpenCommentBox(postElement);
+        
+        if (commentBox) {
+            fillCommentBox(commentBox, response.comment);
+            highlightCommentBox(commentBox);
+        }
+
+    } catch (error) {
+        console.error('Error pre-commenting Facebook post:', error);
+    }
+}
+
+async function findOrOpenCommentBox(postElement) {
+    const commentBoxSelectors = [
+        '[data-testid="ufi_comment_composer"] textarea',
+        '[data-testid="ufi_comment_composer"] [contenteditable="true"]',
+        '.UFIAddCommentInput textarea',
+        '.UFIAddCommentInput [contenteditable="true"]',
+        'div[role="textbox"][contenteditable="true"]'
+    ];
+
+    let commentBox = null;
+    for (const selector of commentBoxSelectors) {
+        commentBox = postElement.querySelector(selector);
+        if (commentBox) break;
+    }
+
+    if (!commentBox) {
+        const commentButtons = postElement.querySelectorAll(
+            '[data-testid="UFI2CommentsCount/root"], a[role="button"][aria-label*="Comment"], a[role="button"][aria-label*="תגובה"]'
+        );
+        
+        for (const btn of commentButtons) {
+            btn.click();
+            await delay(1000);
+            
+            for (const selector of commentBoxSelectors) {
+                commentBox = postElement.querySelector(selector);
+                if (commentBox) break;
+            }
+            if (commentBox) break;
+        }
+    }
+
+    return commentBox;
+}
+
+function fillCommentBox(commentBox, comment) {
+    commentBox.focus();
+    
+    if (commentBox.tagName === 'TEXTAREA') {
+        commentBox.value = comment;
+        commentBox.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+        commentBox.textContent = comment;
+        commentBox.innerHTML = comment;
+        commentBox.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    
+    commentBox.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function highlightCommentBox(commentBox) {
+    commentBox.style.backgroundColor = '#e8f5e8';
+    commentBox.style.border = '2px solid #4CAF50';
+    
+    const indicator = document.createElement('div');
+    indicator.textContent = '🤖 AI Generated Comment';
+    indicator.style.cssText = `
+        position: absolute;
+        top: -25px;
+        left: 0;
+        background: #4CAF50;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-size: 11px;
+        z-index: 1000;
+    `;
+    
+    const container = commentBox.closest('[data-testid*="comment"], .UFIAddComment, [role="article"]') || commentBox.parentElement;
+    if (container) {
+        container.style.position = 'relative';
+        container.appendChild(indicator);
+        
+        setTimeout(() => {
+            if (indicator.parentElement) {
+                indicator.remove();
+            }
+            commentBox.style.backgroundColor = '';
+            commentBox.style.border = '';
+        }, 5000);
+    }
 } 

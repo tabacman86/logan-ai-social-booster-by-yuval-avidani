@@ -15,19 +15,48 @@ document.addEventListener('DOMContentLoaded', function() {
     loadSettings();
 
     // שמירת מפתח API
-    elements.saveApiKey.addEventListener('click', function() {
+    elements.saveApiKey.addEventListener('click', async function() {
         const apiKey = elements.cohereApiKey.value.trim();
         if (!apiKey) {
             showStatus('אנא הזן מפתח API', 'error');
             return;
         }
 
-        chrome.storage.local.set({
-            cohereApiKey: apiKey
-        }, function() {
-            showStatus('מפתח API נשמר בהצלחה', 'success');
-            elements.cohereApiKey.value = '';
-        });
+        // Test API connection
+        showStatus('בודק חיבור ל-Cohere...', 'success');
+        elements.saveApiKey.disabled = true;
+        
+        try {
+            const testResponse = await fetch('https://api.cohere.ai/v1/generate', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: 'command',
+                    prompt: 'Test connection',
+                    max_tokens: 5,
+                    temperature: 0.7
+                })
+            });
+
+            if (testResponse.ok) {
+                chrome.storage.local.set({
+                    cohereApiKey: apiKey
+                }, function() {
+                    showStatus('מפתח API נשמר בהצלחה! החיבור ל-Cohere פעיל.', 'success');
+                    elements.cohereApiKey.value = '';
+                });
+            } else {
+                const errorData = await testResponse.json();
+                showStatus(`שגיאה בחיבור ל-Cohere: ${errorData.message || 'מפתח לא תקין'}`, 'error');
+            }
+        } catch (error) {
+            showStatus(`שגיאה בבדיקת החיבור: ${error.message}`, 'error');
+        }
+        
+        elements.saveApiKey.disabled = false;
     });
 
     // שמירת הגדרות
