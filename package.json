@@ -1,15 +1,15 @@
 {
-  "name": "social-media-auto-engager",
+  "name": "logan-ai-social-booster-by-yuval-avidani",
   "version": "1.0.0",
-  "description": "Browser extension for auto-engaging with LinkedIn and Facebook posts using Cohere AI",
+  "description": "Logan AI Social Booster by Yuval Avidani - AI-powered social media automation extension for LinkedIn and Facebook using intelligent engagement",
   "main": "index.js",
   "scripts": {
     "build": "webpack --mode production",
     "dev": "webpack --mode development --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["chrome-extension", "linkedin", "facebook", "cohere", "ai"],
-  "author": "",
+  "keywords": ["chrome-extension", "linkedin", "facebook", "ai", "social-automation", "logan-ai"],
+  "author": "Yuval Avidani",
   "license": "MIT",
   "devDependencies": {
     "webpack": "^5.88.0",

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "YUV.AI SocialBot Pro - Smart Auto Engager",
-  "version": "2.0",
-  "description": "AI-powered social media automation by YUV.AI - Automatically engage with LinkedIn and Facebook posts using personalized AI responses",
+  "name": "Logan AI Social Booster by Yuval Avidani",
+  "version": "2.1",
+  "description": "Logan AI Social Booster by Yuval Avidani - Intelligent social media automation for LinkedIn and Facebook using advanced AI technology",
   "permissions": [
     "activeTab",
     "storage",
@@ -38,7 +38,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "YUV.AI SocialBot Pro"
+    "default_title": "Logan AI Social Booster"
   },
   "icons": {
     "16": "icons/icon16.png",
