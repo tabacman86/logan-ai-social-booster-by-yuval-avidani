@@ -322,37 +322,79 @@ async function precommentPost(postElement) {
 }
 
 async function findOrOpenCommentBox(postElement) {
-    // Try to find existing comment box
+    // Enhanced selectors for finding comment boxes
     const commentBoxSelectors = [
-        '.comments-comment-box__form textarea',
+        'div[contenteditable="true"]',
         '.comments-comment-texteditor',
+        '.comments-comment-box__comment-text-editor',
+        '.ql-editor',
+        'textarea',
+        '.comments-comment-box__form textarea',
         'div[role="textbox"]',
-        '.ql-editor'
+        '[data-placeholder*="comment"]',
+        '[placeholder*="comment"]',
+        '[placeholder*="תגובה"]',
+        '.mentions-texteditor',
+        '.feed-shared-text-editor'
     ];
-
+    
+    // First, try to find existing comment box with multiple selectors
     let commentBox = null;
     for (const selector of commentBoxSelectors) {
         commentBox = postElement.querySelector(selector);
-        if (commentBox) break;
-    }
-
-    // If no comment box found, try to click "Comment" button
-    if (!commentBox) {
-        const commentButtons = postElement.querySelectorAll('button[aria-label*="Comment"], button[aria-label*="תגובה"]');
-        for (const btn of commentButtons) {
-            btn.click();
-            await delay(1500);
-            
-            // Try to find comment box again
-            for (const selector of commentBoxSelectors) {
-                commentBox = postElement.querySelector(selector);
-                if (commentBox) break;
-            }
-            if (commentBox) break;
+        if (commentBox && commentBox.offsetParent) { // Check if visible
+            console.log(`Found existing comment box using selector: ${selector}`);
+            return commentBox;
         }
     }
-
-    return commentBox;
+    
+    // If no comment box, try to open it by clicking the comment button
+    const commentButtonSelectors = [
+        'button[aria-label*="Comment"]',
+        'button[data-control-name*="comment"]',
+        '.react-button__trigger[aria-label*="Comment"]',
+        '.social-actions-button[aria-label*="Comment"]',
+        'button[aria-label*="תגובה"]',
+        '.comments-comment-box__comment-button',
+        'button:has(.comment-icon)',
+        '.social-action[aria-label*="Comment"]'
+    ];
+    
+    let commentButton = null;
+    for (const selector of commentButtonSelectors) {
+        commentButton = postElement.querySelector(selector);
+        if (commentButton && commentButton.offsetParent) {
+            console.log(`Found comment button using selector: ${selector}`);
+            break;
+        }
+    }
+    
+    if (commentButton) {
+        console.log('Clicking comment button to open comment box');
+        commentButton.click();
+        await delay(1500);
+        
+        // Try again to find the comment box with all selectors
+        for (const selector of commentBoxSelectors) {
+            commentBox = postElement.querySelector(selector);
+            if (commentBox && commentBox.offsetParent) {
+                console.log(`Found comment box after clicking, using selector: ${selector}`);
+                return commentBox;
+            }
+        }
+        
+        // Also try searching in the whole document as fallback
+        for (const selector of commentBoxSelectors) {
+            commentBox = document.querySelector(selector + ':focus, ' + selector + '[data-placeholder*="comment"]');
+            if (commentBox && commentBox.offsetParent) {
+                console.log(`Found comment box globally after clicking, using selector: ${selector}`);
+                return commentBox;
+            }
+        }
+    }
+    
+    console.log('Could not find or open comment box');
+    return null;
 }
 
 async function followLinkedInInteractionSequence(commentBox, comment) {
@@ -373,16 +415,19 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
         commentBox.value = '';
         commentBox.textContent = '';
         
-        // Step 3: Simulate very slow, human-like typing
+        // Step 3: Simulate faster, human-like typing with word-by-word approach
         console.log('Step 3: Simulating human-like typing sequence');
         
-        // Type character by character with realistic delays
+        // Split comment into words for faster typing
+        const words = comment.split(' ');
         let currentText = '';
-        const characters = comment.split('');
         
-        for (let i = 0; i < characters.length; i++) {
-            const char = characters[i];
-            currentText += char;
+        // Type first few words slowly to trigger LinkedIn validation
+        const slowWordsCount = Math.min(3, words.length);
+        
+        for (let i = 0; i < slowWordsCount; i++) {
+            const word = words[i];
+            currentText += (i > 0 ? ' ' : '') + word;
             
             // Update the comment box
             if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
@@ -392,10 +437,10 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
                 commentBox.innerHTML = currentText.replace(/\n/g, '<br>');
             }
             
-            // Trigger input event after each character
+            // Trigger input event
             try {
                 const inputEvent = new InputEvent('input', {
-                    data: char,
+                    data: word,
                     inputType: 'insertText',
                     bubbles: true
                 });
@@ -405,69 +450,38 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
                 commentBox.dispatchEvent(inputEvent);
             }
             
-            // Human-like typing speed: 80-200ms per character
-            // Slower for spaces and punctuation
-            let charDelay = 80 + Math.random() * 120; // 80-200ms base
-            if (char === ' ') charDelay += 50; // Longer pause at spaces
-            if (['.', ',', '!', '?'].includes(char)) charDelay += 100; // Longer pause at punctuation
+            // Wait between words (300-500ms)
+            await delay(300 + Math.random() * 200);
+            console.log(`Typed word ${i+1}/${slowWordsCount}: "${word}"`);
+        }
+        
+        // Now type the rest of the comment all at once for speed
+        if (words.length > slowWordsCount) {
+            const remainingWords = words.slice(slowWordsCount).join(' ');
+            currentText += ' ' + remainingWords;
             
-            await delay(charDelay);
-            
-            // Show progress every 10 characters
-            if (i % 10 === 0 && i > 0) {
-                console.log(`Typed ${i}/${characters.length} characters: "${currentText.substring(Math.max(0, i-10), i+1)}"`);
+            // Update the comment box with full text
+            if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
+                commentBox.value = currentText;
+            } else {
+                commentBox.textContent = currentText;
+                commentBox.innerHTML = currentText.replace(/\n/g, '<br>');
             }
             
-            // Check every 20 characters if submit button appeared
-            if (i % 20 === 0 && i > 20) {
-                const parentContainer = commentBox.closest('.comments-comment-box, .comments-comment-box__form, .artdeco-card') || 
-                                       commentBox.parentElement.closest('.comments-comment-box, .comments-comment-box__form');
-                
-                if (parentContainer) {
-                    const quickCheck = parentContainer.querySelector('button[type="submit"], button span.artdeco-button__text');
-                    if (quickCheck) {
-                        const buttonText = quickCheck.textContent?.trim().toLowerCase();
-                        const spanText = quickCheck.querySelector('span.artdeco-button__text')?.textContent?.trim().toLowerCase();
-                        
-                        if (buttonText === 'post' || buttonText === 'comment' || spanText === 'post' || spanText === 'comment') {
-                            console.log('Submit button appeared during typing! Finishing text and submitting...');
-                            
-                            // Finish typing the rest quickly
-                            const remainingText = comment;
-                            if (commentBox.tagName === 'TEXTAREA' || commentBox.tagName === 'INPUT') {
-                                commentBox.value = remainingText;
-                            } else {
-                                commentBox.textContent = remainingText;
-                                commentBox.innerHTML = remainingText.replace(/\n/g, '<br>');
-                            }
-                            
-                            // Final input event
-                            try {
-                                const finalInputEvent = new InputEvent('input', {
-                                    data: remainingText,
-                                    inputType: 'insertText',
-                                    bubbles: true
-                                });
-                                commentBox.dispatchEvent(finalInputEvent);
-                            } catch (e) {
-                                const inputEvent = new Event('input', { bubbles: true });
-                                commentBox.dispatchEvent(inputEvent);
-                            }
-                            
-                            // Wait a moment then click submit
-                            await delay(500);
-                            try {
-                                quickCheck.click();
-                                console.log('Successfully clicked submit button that appeared during typing');
-                                return true;
-                            } catch (clickError) {
-                                console.error('Error clicking submit button during typing:', clickError);
-                            }
-                            break;
-                        }
-                    }
-                }
+            // Final input event with complete text
+            try {
+                const inputEvent = new InputEvent('input', {
+                    data: remainingWords,
+                    inputType: 'insertText',
+                    bubbles: true
+                });
+                commentBox.dispatchEvent(inputEvent);
+            } catch (e) {
+                const inputEvent = new Event('input', { bubbles: true });
+                commentBox.dispatchEvent(inputEvent);
             }
+            
+            console.log('Completed typing remaining text quickly');
         }
         
         console.log('Finished typing complete comment');
@@ -484,33 +498,98 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
         
         // Step 4: Wait for LinkedIn to validate and show submit button
         console.log('Step 4: Waiting for LinkedIn validation and submit button...');
-        await delay(2000); // Wait longer for validation after full text
         
-        // Step 5: Look for and activate submit button
+        // Try to trigger submit button appearance with additional events
+        try {
+            commentBox.focus();
+            await delay(300);
+            
+            // Trigger blur and focus to potentially activate submit button
+            commentBox.blur();
+            await delay(200);
+            commentBox.focus();
+            await delay(300);
+            
+            // Dispatch additional events that might trigger button appearance
+            ['focusin', 'focusout', 'input', 'change', 'keydown', 'keyup'].forEach(eventType => {
+                try {
+                    const event = new Event(eventType, { bubbles: true });
+                    commentBox.dispatchEvent(event);
+                } catch (e) {
+                    console.log(`Failed to dispatch ${eventType} event`);
+                }
+            });
+            
+            await delay(1000);
+            
+        } catch (e) {
+            console.log('Error triggering submit button appearance:', e);
+        }
+        
+        // Step 5: Look for and activate submit button with improved detection
         console.log('Step 5: Looking for submit button');
-        const parentContainer = commentBox.closest('.comments-comment-box, .comments-comment-box__form, .artdeco-card') || 
-                               commentBox.parentElement.closest('.comments-comment-box, .comments-comment-box__form');
+        
+        // Try multiple strategies to find the right container
+        let parentContainer = null;
+        const containerSelectors = [
+            '.comments-comment-box__form',
+            '.comments-comment-box',
+            '.feed-shared-comment-box',
+            '.artdeco-card',
+            '.comments-comment-box-comment',
+            '.comments-comment-box__content'
+        ];
+        
+        for (const selector of containerSelectors) {
+            parentContainer = commentBox.closest(selector);
+            if (parentContainer) {
+                console.log(`Found parent container using selector: ${selector}`);
+                break;
+            }
+        }
+        
+        // Fallback to parent elements
+        if (!parentContainer) {
+            parentContainer = commentBox.parentElement?.closest('.comments-comment-box, .comments-comment-box__form') ||
+                             commentBox.parentElement?.parentElement?.closest('.comments-comment-box, .comments-comment-box__form') ||
+                             commentBox.parentElement?.parentElement?.parentElement || 
+                             commentBox.parentElement;
+            console.log('Using fallback parent container');
+        }
         
         if (parentContainer) {
-            // Use the new waitForSubmitButton function
-            const submitButton = await waitForSubmitButton(parentContainer, 8000); // Wait up to 8 seconds
+            console.log('Parent container found:', parentContainer.className);
+            
+            // IMMEDIATELY create a backup submit button that the user can see and click
+            createLinkedInSubmitButton(parentContainer, commentBox);
+            console.log('Created backup submit button for user visibility');
+            
+            // Still try to find LinkedIn's original submit button
+            const submitButton = await waitForSubmitButton(parentContainer, 5000); // Wait 5 seconds
             
             if (submitButton) {
-                console.log('Found submit button, attempting to click...');
+                console.log('Found LinkedIn submit button, attempting to click...');
                 try {
                     submitButton.click();
-                    console.log('Successfully clicked submit button');
+                    console.log('Successfully clicked LinkedIn submit button');
+                    
+                    // Remove backup button if LinkedIn button worked
+                    setTimeout(() => {
+                        const backupBtn = parentContainer.querySelector('.yuv-ai-submit-btn');
+                        if (backupBtn) backupBtn.remove();
+                    }, 1000);
+                    
                     return true;
                 } catch (clickError) {
-                    console.error('Error clicking submit button:', clickError);
+                    console.error('Error clicking LinkedIn submit button:', clickError);
                 }
             } else {
-                console.log('No submit button found, showing manual interface...');
-                // Show manual interface for user to submit
-                showManualSubmitInterface(commentBox, comment);
+                console.log('LinkedIn submit button not found, backup button available for user');
             }
         } else {
             console.log('No parent container found for comment box');
+            // Still show manual interface as fallback
+            showManualSubmitInterface(commentBox, comment);
         }
         
         return true;
@@ -524,78 +603,246 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
 // New function to wait for submit button to appear
 async function waitForSubmitButton(container, maxWaitTime = 5000) {
     const startTime = Date.now();
-    const checkInterval = 200; // Check every 200ms
+    const checkInterval = 300; // Check every 300ms
     
     console.log('Starting to wait for submit button in container:', container);
     
-    while (Date.now() - startTime < maxWaitTime) {
-        // Look for submit button with comprehensive selectors
-        const submitButtonSelectors = [
-            'button span.artdeco-button__text',
-            'button[data-control-name="comment_submit"]',
-            'button[type="submit"]',
-            'button[aria-label*="Post"]',
-            'button[aria-label*="Comment"]',
-            'button[aria-label*="פרסם"]',
-            'button[aria-label*="תגובה"]'
-        ];
-        
-        // Debug: Log all buttons in container
-        const allButtons = container.querySelectorAll('button');
-        console.log(`Found ${allButtons.length} buttons in container`);
-        
-        for (const selector of submitButtonSelectors) {
-            try {
-                const buttons = container.querySelectorAll(selector);
-                console.log(`Selector "${selector}" found ${buttons.length} buttons`);
-                
-                for (const button of buttons) {
-                    const buttonText = button.textContent?.trim().toLowerCase();
-                    const spanText = button.querySelector('span.artdeco-button__text')?.textContent?.trim().toLowerCase();
-                    
-                    // Check if this looks like a submit button
-                    if (
-                        buttonText === 'post' || 
-                        buttonText === 'comment' ||
-                        buttonText === 'פרסם' ||
-                        buttonText === 'תגובה' ||
-                        spanText === 'post' ||
-                        spanText === 'comment' ||
-                        spanText === 'פרסם' ||
-                        spanText === 'תגובה'
-                    ) {
-                        console.log(`Found submit button: "${button.textContent?.trim()}" via selector: ${selector}`);
-                        return button;
+    // Create a promise that resolves when submit button is found via MutationObserver
+    const mutationPromise = new Promise((resolve) => {
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.type === 'childList') {
+                    // Check for added submit buttons
+                    for (const addedNode of mutation.addedNodes) {
+                        if (addedNode.nodeType === Node.ELEMENT_NODE) {
+                            const submitButton = checkElementForSubmitButton(addedNode);
+                            if (submitButton) {
+                                console.log('Submit button detected via MutationObserver!');
+                                observer.disconnect();
+                                resolve(submitButton);
+                                return;
+                            }
+                        }
                     }
                 }
-            } catch (selectorError) {
-                console.log(`Selector "${selector}" failed:`, selectorError.message);
+                if (mutation.type === 'attributes' && mutation.target.tagName === 'BUTTON') {
+                    // Check if a button's attributes changed to make it a submit button
+                    const submitButton = checkElementForSubmitButton(mutation.target);
+                    if (submitButton) {
+                        console.log('Submit button detected via attribute change!');
+                        observer.disconnect();
+                        resolve(submitButton);
+                        return;
+                    }
+                }
+            }
+        });
+        
+        // Observe changes in the container and document
+        observer.observe(container, { 
+            childList: true, 
+            subtree: true, 
+            attributes: true,
+            attributeFilter: ['type', 'data-control-name', 'aria-label', 'class', 'disabled']
+        });
+        
+        // Also observe the entire document as LinkedIn might add buttons elsewhere
+        observer.observe(document.body, { 
+            childList: true, 
+            subtree: true, 
+            attributes: true,
+            attributeFilter: ['type', 'data-control-name', 'aria-label', 'class', 'disabled']
+        });
+        
+        // Cleanup after maxWaitTime
+        setTimeout(() => {
+            observer.disconnect();
+            resolve(null);
+        }, maxWaitTime);
+    });
+    
+    // Helper function to check if an element is a submit button
+    function checkElementForSubmitButton(element) {
+        if (element.tagName !== 'BUTTON') return null;
+        if (!element.offsetParent) return null; // Skip hidden buttons
+        
+        const buttonText = element.textContent?.trim().toLowerCase();
+        const spanText = element.querySelector('span.artdeco-button__text')?.textContent?.trim().toLowerCase();
+        const ariaLabel = element.getAttribute('aria-label')?.toLowerCase() || '';
+        const dataControl = element.getAttribute('data-control-name') || '';
+        
+        const isSubmitButton = 
+            buttonText === 'post' || 
+            buttonText === 'comment' ||
+            buttonText === 'send' ||
+            buttonText === 'פרסם' ||
+            buttonText === 'תגובה' ||
+            buttonText === 'שלח' ||
+            spanText === 'post' ||
+            spanText === 'comment' ||
+            spanText === 'send' ||
+            spanText === 'פרסם' ||
+            spanText === 'תגובה' ||
+            spanText === 'שלח' ||
+            ariaLabel.includes('post') ||
+            ariaLabel.includes('comment') ||
+            ariaLabel.includes('submit') ||
+            ariaLabel.includes('send') ||
+            dataControl.includes('submit') ||
+            dataControl.includes('comment') ||
+            element.type === 'submit' ||
+            element.className.includes('submit');
+        
+        return isSubmitButton && !element.disabled ? element : null;
+    }
+    
+    while (Date.now() - startTime < maxWaitTime) {
+        // First, try to find buttons in multiple possible containers
+        const searchContainers = [
+            container,
+            container.querySelector('.comments-comment-box'),
+            container.querySelector('.comments-comment-box__form'),
+            container.closest('.comments-comment-box'),
+            container.closest('.comments-comment-box__form'),
+            container.closest('.feed-shared-comment-box'),
+            document.querySelector('.comments-comment-box__form:last-child'),
+            document.querySelector('.comments-comment-box:last-child')
+        ].filter(Boolean);
+        
+        console.log(`Checking ${searchContainers.length} possible containers for submit buttons`);
+        
+        for (const searchContainer of searchContainers) {
+            if (!searchContainer) continue;
+            
+            // Look for submit button with comprehensive selectors
+            const submitButtonSelectors = [
+                'button[type="submit"]',
+                'button[data-control-name="comment_submit"]',
+                'button span.artdeco-button__text',
+                'button.comments-comment-box__submit-button',
+                'button[aria-label*="Post"]',
+                'button[aria-label*="Comment"]',
+                'button[aria-label*="פרסם"]',
+                'button[aria-label*="תגובה"]',
+                '.comments-comment-box__submit-button',
+                'button:has(span.artdeco-button__text)'
+            ];
+            
+            // Debug: Log all buttons in current container
+            const allButtons = searchContainer.querySelectorAll('button');
+            if (allButtons.length > 0) {
+                console.log(`Found ${allButtons.length} buttons in container ${searchContainer.className}`);
+            }
+            
+            for (const selector of submitButtonSelectors) {
+                try {
+                    const buttons = searchContainer.querySelectorAll(selector);
+                    if (buttons.length > 0) {
+                        console.log(`Selector "${selector}" found ${buttons.length} buttons`);
+                    }
+                    
+                    for (const button of buttons) {
+                        if (!button.offsetParent) continue; // Skip hidden buttons
+                        
+                        const buttonText = button.textContent?.trim().toLowerCase();
+                        const spanText = button.querySelector('span.artdeco-button__text')?.textContent?.trim().toLowerCase();
+                        const ariaLabel = button.getAttribute('aria-label')?.toLowerCase() || '';
+                        
+                        // More flexible text matching
+                        const isSubmitButton = 
+                            buttonText === 'post' || 
+                            buttonText === 'comment' ||
+                            buttonText === 'send' ||
+                            buttonText === 'פרסם' ||
+                            buttonText === 'תגובה' ||
+                            buttonText === 'שלח' ||
+                            spanText === 'post' ||
+                            spanText === 'comment' ||
+                            spanText === 'send' ||
+                            spanText === 'פרסם' ||
+                            spanText === 'תגובה' ||
+                            spanText === 'שלח' ||
+                            ariaLabel.includes('post') ||
+                            ariaLabel.includes('comment') ||
+                            ariaLabel.includes('submit') ||
+                            ariaLabel.includes('send') ||
+                            button.type === 'submit' ||
+                            button.getAttribute('data-control-name') === 'comment_submit' ||
+                            button.className.includes('submit');
+                        
+                        if (isSubmitButton && !button.disabled) {
+                            console.log(`Found submit button: "${button.textContent?.trim()}" via selector: ${selector} in container: ${searchContainer.className}`);
+                            return button;
+                        }
+                    }
+                } catch (selectorError) {
+                    console.log(`Selector "${selector}" failed:`, selectorError.message);
+                }
+            }
+            
+            // Manual search through all visible buttons in this container
+            for (const button of allButtons) {
+                if (!button.offsetParent) continue; // Skip hidden buttons
+                
+                const buttonText = button.textContent?.trim().toLowerCase();
+                const spanText = button.querySelector('span.artdeco-button__text')?.textContent?.trim().toLowerCase();
+                const ariaLabel = button.getAttribute('aria-label')?.toLowerCase() || '';
+                const dataControl = button.getAttribute('data-control-name') || '';
+                
+                const isLikelySubmitButton = 
+                    buttonText === 'post' || 
+                    buttonText === 'comment' ||
+                    buttonText === 'send' ||
+                    buttonText === 'פרסם' ||
+                    buttonText === 'תגובה' ||
+                    buttonText === 'שלח' ||
+                    spanText === 'post' ||
+                    spanText === 'comment' ||
+                    spanText === 'send' ||
+                    spanText === 'פרסם' ||
+                    spanText === 'תגובה' ||
+                    spanText === 'שלח' ||
+                    ariaLabel.includes('post') ||
+                    ariaLabel.includes('comment') ||
+                    ariaLabel.includes('submit') ||
+                    ariaLabel.includes('send') ||
+                    dataControl.includes('submit') ||
+                    dataControl.includes('comment') ||
+                    button.type === 'submit' ||
+                    button.className.includes('submit');
+                
+                if (isLikelySubmitButton && !button.disabled) {
+                    console.log(`Found submit button manually: "${button.textContent?.trim()}" in container: ${searchContainer.className}`);
+                    return button;
+                }
             }
         }
         
-        // Manual search through all buttons
-        for (const button of allButtons) {
+        // Also search in the entire document as fallback
+        const globalButtons = document.querySelectorAll('button[type="submit"], button[data-control-name="comment_submit"], .comments-comment-box__submit-button');
+        for (const button of globalButtons) {
+            if (!button.offsetParent) continue; // Skip hidden buttons
+            
             const buttonText = button.textContent?.trim().toLowerCase();
             const spanText = button.querySelector('span.artdeco-button__text')?.textContent?.trim().toLowerCase();
-            const ariaLabel = button.getAttribute('aria-label')?.toLowerCase() || '';
             
-            if (
-                buttonText === 'post' || 
-                buttonText === 'comment' ||
-                buttonText === 'פרסם' ||
-                buttonText === 'תגובה' ||
-                spanText === 'post' ||
-                spanText === 'comment' ||
-                spanText === 'פרסם' ||
-                spanText === 'תגובה' ||
-                ariaLabel.includes('post') ||
-                ariaLabel.includes('submit') ||
-                button.type === 'submit' ||
-                button.getAttribute('data-control-name') === 'comment_submit'
-            ) {
-                console.log(`Found submit button manually: "${button.textContent?.trim()}"`);
+            if ((buttonText === 'post' || buttonText === 'comment' || buttonText === 'פרסם' || buttonText === 'תגובה' ||
+                 spanText === 'post' || spanText === 'comment' || spanText === 'פרסם' || spanText === 'תגובה') && 
+                 !button.disabled) {
+                console.log(`Found submit button globally: "${button.textContent?.trim()}"`);
                 return button;
             }
+        }
+        
+        // Check the MutationObserver promise
+        const mutationResult = await Promise.race([
+            mutationPromise,
+            new Promise(resolve => setTimeout(() => resolve(null), checkInterval))
+        ]);
+        
+        if (mutationResult) {
+            console.log('Submit button found via MutationObserver!');
+            return mutationResult;
         }
         
         await delay(checkInterval);
@@ -604,8 +851,13 @@ async function waitForSubmitButton(container, maxWaitTime = 5000) {
     // If we get here, button wasn't found - let's debug what we have
     console.log('Submit button not found within timeout');
     console.log('Final button inventory:');
-    const finalButtons = container.querySelectorAll('button');
+    
+    // Try one more time to find any submit buttons
+    const finalButtons = document.querySelectorAll('button');
+    let foundButtons = [];
     finalButtons.forEach((btn, index) => {
+        if (!btn.offsetParent) return; // Skip hidden buttons
+        
         const buttonText = btn.textContent?.trim();
         const spanText = btn.querySelector('span.artdeco-button__text')?.textContent?.trim();
         const ariaLabel = btn.getAttribute('aria-label');
@@ -613,7 +865,8 @@ async function waitForSubmitButton(container, maxWaitTime = 5000) {
         const type = btn.type;
         const disabled = btn.disabled;
         
-        console.log(`Button ${index + 1}:`, {
+        foundButtons.push({
+            index: index + 1,
             text: buttonText,
             spanText: spanText,
             ariaLabel: ariaLabel,
@@ -622,7 +875,19 @@ async function waitForSubmitButton(container, maxWaitTime = 5000) {
             disabled: disabled,
             className: btn.className
         });
+        
+        // Last ditch effort - if any button contains submit-related text
+        if (buttonText?.toLowerCase().includes('post') || 
+            buttonText?.toLowerCase().includes('comment') ||
+            spanText?.toLowerCase().includes('post') ||
+            spanText?.toLowerCase().includes('comment') ||
+            type === 'submit') {
+            console.log(`Found potential submit button in final search: "${buttonText}" at index ${index + 1}`);
+            return btn;
+        }
     });
+    
+    console.log('Found buttons:', foundButtons.slice(0, 10)); // Log first 10 buttons
     
     return null;
 }
@@ -1088,39 +1353,62 @@ function showManualReplyInterface(commentElement, replyText) {
 
 function createLinkedInSubmitButton(container, commentBox) {
     // Remove any existing custom submit button
-    const existingBtn = container.querySelector('.ai-custom-submit-btn');
+    const existingBtn = container.querySelector('.yuv-ai-submit-btn');
     if (existingBtn) {
         existingBtn.remove();
     }
     
-    // Create a submit button that looks like LinkedIn's
+    // Create a highly visible submit button
     const submitBtn = document.createElement('button');
-    submitBtn.className = 'ai-custom-submit-btn';
-    submitBtn.textContent = 'Post';
-    submitBtn.type = 'button'; // Don't use submit to avoid form conflicts
+    submitBtn.className = 'yuv-ai-submit-btn';
+    submitBtn.innerHTML = '🤖 <strong>YUV.AI</strong> פרסם תגובה';
+    submitBtn.type = 'button';
     
     submitBtn.style.cssText = `
-        background: #0a66c2;
+        background: linear-gradient(135deg, #0a66c2, #1f7ce8);
         color: white;
-        border: none;
-        padding: 8px 16px;
-        border-radius: 16px;
-        margin-left: 8px;
+        border: 2px solid #ffffff;
+        padding: 12px 24px;
+        border-radius: 25px;
+        margin: 10px;
         cursor: pointer;
-        font-weight: 600;
-        font-size: 14px;
+        font-weight: 700;
+        font-size: 16px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        transition: background-color 0.15s ease-in-out;
-        min-height: 32px;
+        transition: all 0.3s ease;
+        min-height: 45px;
+        box-shadow: 0 4px 15px rgba(10, 102, 194, 0.4);
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        position: relative;
+        z-index: 1000;
+        animation: pulseYuvAI 2s infinite;
     `;
+    
+    // Add pulsing animation
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes pulseYuvAI {
+            0% { box-shadow: 0 4px 15px rgba(10, 102, 194, 0.4); }
+            50% { box-shadow: 0 4px 25px rgba(10, 102, 194, 0.7); }
+            100% { box-shadow: 0 4px 15px rgba(10, 102, 194, 0.4); }
+        }
+    `;
+    if (!document.head.querySelector('#yuv-ai-button-style')) {
+        style.id = 'yuv-ai-button-style';
+        document.head.appendChild(style);
+    }
     
     // Add hover effect
     submitBtn.addEventListener('mouseenter', () => {
-        submitBtn.style.background = '#004182';
+        submitBtn.style.background = 'linear-gradient(135deg, #004182, #0052a3)';
+        submitBtn.style.transform = 'scale(1.05)';
     });
     
     submitBtn.addEventListener('mouseleave', () => {
-        submitBtn.style.background = '#0a66c2';
+        submitBtn.style.background = 'linear-gradient(135deg, #0a66c2, #1f7ce8)';
+        submitBtn.style.transform = 'scale(1)';
     });
     
     submitBtn.addEventListener('click', (e) => {
@@ -1207,19 +1495,35 @@ function createLinkedInSubmitButton(container, commentBox) {
         }
     });
     
-    // Find the best place to add the button
+    // Find the best place to add the button - make it very visible
     const buttonContainer = container.querySelector('.comments-comment-box__submit-button') || 
                            container.querySelector('.comments-comment-box-comment__cta-container') ||
                            container.querySelector('.comments-comment-box__form-controls') ||
                            commentBox.parentElement;
     
+    // Create a wrapper for better positioning
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 15px 0;
+        padding: 10px;
+        background: rgba(10, 102, 194, 0.05);
+        border-radius: 15px;
+        border: 1px dashed #0a66c2;
+    `;
+    wrapper.appendChild(submitBtn);
+    
     if (buttonContainer) {
-        buttonContainer.appendChild(submitBtn);
-        console.log('Custom submit button added to:', buttonContainer);
+        buttonContainer.appendChild(wrapper);
+        console.log('YUV.AI submit button added in wrapper to:', buttonContainer);
     } else {
-        // Fallback: add after the comment box
-        commentBox.parentElement.appendChild(submitBtn);
-        console.log('Custom submit button added as fallback after comment box');
+        // Fallback: add after the comment box with absolute positioning for visibility
+        commentBox.parentElement.appendChild(wrapper);
+        wrapper.style.position = 'relative';
+        wrapper.style.top = '10px';
+        console.log('YUV.AI submit button added as fallback with wrapper');
     }
 }
 
