@@ -26,7 +26,7 @@ An intelligent Chrome extension that automates social media engagement on Linked
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/yourusername/logan-ai-social-booster-by-yuval-avidani.git
+   git clone https://github.com/hoodini/logan-ai-social-booster-by-yuval-avidani.git
    cd logan-ai-social-booster-by-yuval-avidani
    ```
 
