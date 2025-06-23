@@ -56,9 +56,15 @@ function startObserving() {
                         // Add new posts to intersection observer
                         const newPosts = node.querySelectorAll ? 
                             node.querySelectorAll('[data-id^="urn:li:activity"], .feed-shared-update-v2') : [];
+                        
+                        if (newPosts.length > 0) {
+                            console.log(`🔍 Found ${newPosts.length} new posts added to feed`);
+                        }
+                        
                         newPosts.forEach(post => {
                             if (intersectionObserver) {
                                 intersectionObserver.observe(post);
+                                console.log('👀 Now observing new post:', getPostId(post));
                             }
                         });
                         
@@ -66,6 +72,7 @@ function startObserving() {
                         if (node.matches && node.matches('[data-id^="urn:li:activity"], .feed-shared-update-v2')) {
                             if (intersectionObserver) {
                                 intersectionObserver.observe(node);
+                                console.log('👀 Now observing new post (direct):', getPostId(node));
                             }
                         }
                     }
@@ -74,11 +81,13 @@ function startObserving() {
         });
     });
 
-    // Start observing
+    // Start observing with enhanced options
     observer.observe(document.body, {
         childList: true,
         subtree: true
     });
+    
+    console.log('🚀 Started observing for new posts in LinkedIn feed');
 }
 
 function checkForNewPosts() {
@@ -129,16 +138,23 @@ async function autoLike(postElement) {
             if (likeButton) break;
         }
 
-        if (likeButton && !likeButton.classList.contains('react-button__trigger--active')) {
-            // Check if already liked
-            const ariaPressed = likeButton.getAttribute('aria-pressed');
-            if (ariaPressed === 'true') return;
+        if (likeButton) {
+            // Check if already liked (multiple ways to detect)
+            const isActive = likeButton.classList.contains('react-button__trigger--active') ||
+                           likeButton.classList.contains('artdeco-button--selected') ||
+                           likeButton.getAttribute('aria-pressed') === 'true' ||
+                           likeButton.querySelector('[data-test-icon="thumbs-up-filled-icon"]') ||
+                           likeButton.querySelector('.like-icon--liked');
 
-            likeButton.click();
-            console.log('Liked LinkedIn post');
-            
-            // Wait after action
-            await delay(1000 + Math.random() * 2000);
+            if (!isActive) {
+                likeButton.click();
+                console.log('✅ Liked LinkedIn post');
+                
+                // Wait after action
+                await delay(1000 + Math.random() * 2000);
+            } else {
+                console.log('⏭️ Post already liked, skipping');
+            }
         }
     } catch (error) {
         console.error('Error auto-liking post:', error);
@@ -147,11 +163,17 @@ async function autoLike(postElement) {
 
 async function autoComment(postElement) {
     try {
+        const postId = getPostId(postElement);
+        console.log('💬 Starting to generate comment for post:', postId);
+        
         // Get post content for generating comment
         const postContent = extractPostContent(postElement);
-        if (!postContent) return;
+        if (!postContent) {
+            console.log('❌ No post content found, skipping comment');
+            return;
+        }
 
-        console.log('Generating comment for post:', postContent.substring(0, 100));
+        console.log('📝 Post content (first 100 chars):', postContent.substring(0, 100));
 
         // Generate comment using background script
         const response = await chrome.runtime.sendMessage({
@@ -161,18 +183,22 @@ async function autoComment(postElement) {
         });
 
         if (!response.success) {
-            console.error('Failed to generate comment:', response.error);
+            console.error('❌ Failed to generate comment:', response.error);
             return;
         }
 
-        console.log('Generated comment:', response.comment);
+        console.log('✅ Generated comment:', response.comment);
 
         // Find or open comment box
         let commentBox = await findOrOpenCommentBox(postElement);
         
         if (commentBox) {
-            // Fill the comment box with human-like typing
+            console.log('📝 Found comment box, typing comment (WITHOUT auto-submit)');
+            // Fill the comment box with human-like typing BUT DON'T SUBMIT
             await followLinkedInInteractionSequence(commentBox, response.comment);
+            console.log('✅ Comment ready - user must click submit button');
+        } else {
+            console.log('❌ Could not find or open comment box');
         }
 
     } catch (error) {
@@ -237,7 +263,14 @@ function setupPostViewingDetection() {
 
 function observeCurrentPosts() {
     const posts = document.querySelectorAll('[data-id^="urn:li:activity"], .feed-shared-update-v2');
-    posts.forEach(post => intersectionObserver.observe(post));
+    console.log(`📋 Found ${posts.length} existing posts to observe`);
+    posts.forEach((post, index) => {
+        if (intersectionObserver) {
+            intersectionObserver.observe(post);
+            const postId = getPostId(post);
+            console.log(`👀 Observing existing post ${index + 1}/${posts.length}:`, postId);
+        }
+    });
 }
 
 function handlePostInView(postElement) {
@@ -247,11 +280,13 @@ function handlePostInView(postElement) {
     }
     
     currentlyViewingPost = postElement;
-    console.log('User is focusing on a post');
+    const postId = getPostId(postElement);
+    console.log('👁️ User is viewing post:', postId);
     
     // Wait 3 seconds before taking action
     viewingTimer = setTimeout(() => {
         if (currentlyViewingPost === postElement) {
+            console.log('⏰ 3 seconds elapsed, processing post:', postId);
             processPostWithFocus(postElement);
         }
     }, 3000); // 3 seconds delay
@@ -260,11 +295,11 @@ function handlePostInView(postElement) {
 async function processPostWithFocus(postElement) {
     try {
         const postId = getPostId(postElement);
-        if (!postId || processedPosts.has(postId)) {
+        if (!postId) {
             return;
         }
 
-        processedPosts.add(postId);
+        // Allow processing the same post multiple times if user scrolls back to it
         console.log('Processing focused post:', postId);
 
         // Auto-like if enabled (only when user focused on post)
@@ -564,27 +599,16 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
             createLinkedInSubmitButton(parentContainer, commentBox);
             console.log('Created backup submit button for user visibility');
             
-            // Still try to find LinkedIn's original submit button
-            const submitButton = await waitForSubmitButton(parentContainer, 5000); // Wait 5 seconds
+            // DON'T auto-click LinkedIn's submit button - let user decide when to post
+            console.log('✅ Comment typed and YUV.AI button ready - waiting for user to submit');
+            
+            // Optional: Still check if LinkedIn button appears for debugging
+            const submitButton = await waitForSubmitButton(parentContainer, 2000); // Quick check only
             
             if (submitButton) {
-                console.log('Found LinkedIn submit button, attempting to click...');
-                try {
-                    submitButton.click();
-                    console.log('Successfully clicked LinkedIn submit button');
-                    
-                    // Remove backup button if LinkedIn button worked
-                    setTimeout(() => {
-                        const backupBtn = parentContainer.querySelector('.yuv-ai-submit-btn');
-                        if (backupBtn) backupBtn.remove();
-                    }, 1000);
-                    
-                    return true;
-                } catch (clickError) {
-                    console.error('Error clicking LinkedIn submit button:', clickError);
-                }
+                console.log('✅ LinkedIn submit button also detected');
             } else {
-                console.log('LinkedIn submit button not found, backup button available for user');
+                console.log('ℹ️ LinkedIn submit button not found, YUV.AI backup button available');
             }
         } else {
             console.log('No parent container found for comment box');
