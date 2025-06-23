@@ -162,7 +162,9 @@ async function generateComment(post, style, personaData) {
                 
                 // גישה נכונה לטקסט בתגובה החדשה של Chat API
                 if (data.message && data.message.content && data.message.content[0] && data.message.content[0].text) {
-                    const comment = data.message.content[0].text.trim();
+                    const baseComment = data.message.content[0].text.trim();
+                    // הוספת חתימת לוגאן לכל תגובה
+                    const comment = baseComment + " (התגובה נכתבה ע\"י לוגאן, סוכן ה-AI של יובל אבידני)";
                     resolve(comment);
                 } else {
                     throw new Error('תגובה ריקה מ-Cohere API');
@@ -243,7 +245,9 @@ async function generateReply(commentText, postContent, style, personaData) {
                 
                 // גישה נכונה לטקסט בתגובה החדשה של Chat API
                 if (data.message && data.message.content && data.message.content[0] && data.message.content[0].text) {
-                    const reply = data.message.content[0].text.trim();
+                    const baseReply = data.message.content[0].text.trim();
+                    // הוספת חתימת לוגאן לכל תגובה
+                    const reply = baseReply + " (התגובה נכתבה ע\"י לוגאן, סוכן ה-AI של יובל אבידני)";
                     resolve(reply);
                 } else {
                     throw new Error('תגובה ריקה מ-Cohere API');
