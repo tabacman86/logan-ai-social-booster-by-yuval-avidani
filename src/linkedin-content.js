@@ -28,6 +28,7 @@ async function init() {
         startObserving();
         setupPostViewingDetection();
         setupReplyToCommentListeners();
+        setupScrollDetection();
     }
 }
 
@@ -88,6 +89,24 @@ function startObserving() {
     });
     
     console.log('🚀 Started observing for new posts in LinkedIn feed');
+}
+
+// Add scroll detection to catch posts that might be missed
+function setupScrollDetection() {
+    let scrollTimeout;
+    
+    window.addEventListener('scroll', () => {
+        // Clear previous timeout
+        clearTimeout(scrollTimeout);
+        
+        // Wait for scrolling to stop, then check for new posts
+        scrollTimeout = setTimeout(() => {
+            console.log('📜 Scroll stopped - checking for new posts');
+            observeCurrentPosts();
+        }, 1000); // Wait 1 second after scroll stops
+    });
+    
+    console.log('📜 Scroll detection setup complete');
 }
 
 function checkForNewPosts() {
@@ -253,41 +272,68 @@ function setupPostViewingDetection() {
             }
         });
     }, {
-        threshold: 0.7, // Post needs to be 70% visible
-        rootMargin: '0px'
+        threshold: 0.5, // Post needs to be 50% visible (less strict)
+        rootMargin: '50px' // Start observing 50px before entering viewport
     });
 
     // Observe existing posts
     observeCurrentPosts();
+    
+    // Add periodic refresh to catch new posts that might be missed
+    setInterval(() => {
+        console.log('🔄 Refreshing post observation...');
+        observeCurrentPosts();
+    }, 5000); // Check every 5 seconds for new posts
 }
 
 function observeCurrentPosts() {
+    if (!intersectionObserver) return;
+    
     const posts = document.querySelectorAll('[data-id^="urn:li:activity"], .feed-shared-update-v2');
-    console.log(`📋 Found ${posts.length} existing posts to observe`);
+    console.log(`📋 Found ${posts.length} posts in feed`);
+    
+    let newPostsCount = 0;
+    
     posts.forEach((post, index) => {
-        if (intersectionObserver) {
+        // Check if this post is already being observed
+        const postId = getPostId(post);
+        const isAlreadyObserved = post.hasAttribute('data-yuv-ai-observed');
+        
+        if (!isAlreadyObserved) {
             intersectionObserver.observe(post);
-            const postId = getPostId(post);
-            console.log(`👀 Observing existing post ${index + 1}/${posts.length}:`, postId);
+            post.setAttribute('data-yuv-ai-observed', 'true');
+            newPostsCount++;
+            console.log(`👀 NEW post observed ${newPostsCount}:`, postId);
         }
     });
+    
+    if (newPostsCount > 0) {
+        console.log(`✅ Added ${newPostsCount} new posts to observation`);
+    } else {
+        console.log('ℹ️ No new posts found');
+    }
 }
 
 function handlePostInView(postElement) {
     // Clear any existing timer
     if (viewingTimer) {
         clearTimeout(viewingTimer);
+        console.log('⏹️ Cleared previous post viewing timer');
     }
     
     currentlyViewingPost = postElement;
     const postId = getPostId(postElement);
     console.log('👁️ User is viewing post:', postId);
+    console.log('⏱️ Starting 3-second countdown for post processing...');
     
     // Wait 3 seconds before taking action
     viewingTimer = setTimeout(() => {
         if (currentlyViewingPost === postElement) {
             console.log('⏰ 3 seconds elapsed, processing post:', postId);
+            console.log('📊 Current settings - Auto Like:', settings.autoLike, 'Auto Comment:', settings.autoComment);
             processPostWithFocus(postElement);
+        } else {
+            console.log('⚠️ User moved away from post before processing:', postId);
         }
     }, 3000); // 3 seconds delay
 }
@@ -601,15 +647,10 @@ async function followLinkedInInteractionSequence(commentBox, comment) {
             
             // DON'T auto-click LinkedIn's submit button - let user decide when to post
             console.log('✅ Comment typed and YUV.AI button ready - waiting for user to submit');
+            console.log('🚫 NO AUTO-SUBMIT: User must manually click to post comment');
             
-            // Optional: Still check if LinkedIn button appears for debugging
-            const submitButton = await waitForSubmitButton(parentContainer, 2000); // Quick check only
-            
-            if (submitButton) {
-                console.log('✅ LinkedIn submit button also detected');
-            } else {
-                console.log('ℹ️ LinkedIn submit button not found, YUV.AI backup button available');
-            }
+            // Don't even look for LinkedIn submit button to avoid any auto-clicking temptation
+            console.log('ℹ️ YUV.AI backup button available for manual submission');
         } else {
             console.log('No parent container found for comment box');
             // Still show manual interface as fallback
@@ -1439,83 +1480,28 @@ function createLinkedInSubmitButton(container, commentBox) {
         e.preventDefault();
         e.stopPropagation();
         
-        console.log('Custom submit button clicked, attempting to post comment...');
+        console.log('🚫 YUV.AI button clicked - NO AUTO-SUBMIT! User must manually click LinkedIn Post button');
         
-        try {
-            // Try multiple approaches to submit the comment
+        // Show clear message that user needs to manually submit
+        const alertMsg = `
+🤖 YUV.AI: תגובה מוכנה!
+
+אתה צריך ללחוץ בעצמך על כפתור "פרסם" או "Post" של LinkedIn כדי לפרסם את התגובה.
+
+התוסף לא יפרסם אוטומטית - אתה שולט מתי לפרסם!
+        `;
+        
+        alert(alertMsg);
+        
+        // Highlight the comment box to help user find it
+        if (commentBox) {
+            commentBox.style.border = '3px solid #0a66c2';
+            commentBox.style.boxShadow = '0 0 15px rgba(10, 102, 194, 0.5)';
             
-            // 1. Look for LinkedIn's real submit button that might have appeared
-            const realSubmitBtn = container.querySelector('button[data-control-name="comment_submit"]');
-            if (realSubmitBtn) {
-                console.log('Found real LinkedIn submit button, clicking it...');
-                realSubmitBtn.click();
-                return;
-            }
-            
-            // 2. Try to trigger form submission
-            const form = commentBox.closest('form');
-            if (form) {
-                console.log('Triggering form submission...');
-                try {
-                    form.dispatchEvent(new Event('submit', { bubbles: true }));
-                    return;
-                } catch (error) {
-                    console.log('Form submission failed:', error);
-                }
-            }
-            
-            // 3. Try to find and click any button that might submit
-            const allButtons = container.querySelectorAll('button');
-            for (const btn of allButtons) {
-                if (btn !== submitBtn && (
-                    btn.textContent.includes('Post') || 
-                    btn.textContent.includes('פרסם') ||
-                    btn.getAttribute('aria-label')?.includes('Post') ||
-                    btn.getAttribute('data-control-name')?.includes('submit')
-                )) {
-                    console.log('Found potential submit button, clicking:', btn);
-                    try {
-                        btn.click();
-                        return;
-                    } catch (error) {
-                        console.log('Button click failed:', error);
-                    }
-                }
-            }
-            
-            // 4. Try keyboard shortcut (Ctrl+Enter)
-            console.log('Trying keyboard shortcut Ctrl+Enter...');
-            try {
-                const ctrlEnterEvent = new KeyboardEvent('keydown', {
-                    key: 'Enter',
-                    ctrlKey: true,
-                    bubbles: true
-                });
-                commentBox.dispatchEvent(ctrlEnterEvent);
-            } catch (error) {
-                console.log('Keyboard event failed:', error);
-                
-                // Fallback: basic Enter key
-                try {
-                    const enterEvent = new Event('keydown', { bubbles: true });
-                    Object.defineProperty(enterEvent, 'key', { value: 'Enter' });
-                    Object.defineProperty(enterEvent, 'ctrlKey', { value: true });
-                    commentBox.dispatchEvent(enterEvent);
-                } catch (fallbackError) {
-                    console.log('Fallback keyboard event also failed:', fallbackError);
-                }
-            }
-            
-            // 5. Show manual instruction if nothing worked
             setTimeout(() => {
-                if (commentBox.value || commentBox.textContent) {
-                    alert('Comment is ready! Please click the LinkedIn "Post" button to publish, or press Ctrl+Enter');
-                }
-            }, 1000);
-            
-        } catch (error) {
-            console.error('Error in submit button click handler:', error);
-            alert('Comment is ready! Please click the LinkedIn "Post" button manually to publish.');
+                commentBox.style.border = '';
+                commentBox.style.boxShadow = '';
+            }, 5000);
         }
     });
     
